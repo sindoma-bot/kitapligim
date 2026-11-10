@@ -181,3 +181,16 @@ textarea.csvout{width:100%;min-height:140px;font-family:ui-monospace,Menlo,monos
 .zoom{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.92);display:grid;place-items:center;padding:16px;cursor:zoom-out}
 .zoom img{max-width:100%;max-height:100%;object-fit:contain}
 .zoom .iconbtn{position:absolute;top:calc(12px + env(safe-area-inset-top,0px));right:12px;color:#fff}
+
+/* book menu */
+.card{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.card img{-webkit-touch-callout:none;pointer-events:none}
+.bmenu-scrim{position:fixed;inset:0;z-index:60}
+.bmenu{position:fixed;min-width:210px;max-width:min(280px,calc(100vw - 16px));background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 32px -8px rgba(0,0,0,.35);padding:6px;display:grid}
+.bmenu-t{font-size:.78rem;color:var(--muted);padding:6px 10px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bmenu>button{all:unset;cursor:pointer;padding:10px;border-radius:8px;font-size:.95rem}
+.bmenu>button:hover,.bmenu>button:focus-visible{background:var(--surface-2)}
+.bmenu>button.danger{color:var(--danger)}
+.bmenu-st{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px 0;border-block:1px solid var(--line);margin:4px 0}
+.bmenu-st button{all:unset;cursor:pointer;text-align:center;font-size:.8rem;padding:7px 2px;border-radius:6px;color:var(--muted)}
+.bmenu-st button[aria-checked="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}

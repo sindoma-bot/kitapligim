@@ -340,6 +340,7 @@ $("#empty").addEventListener("click", e=>{
 });
 $("#grid").addEventListener("click", e=>{
   const c = e.target.closest(".card"); if(!c) return;
+  if (longPressed) { longPressed = false; e.preventDefault(); return; }
   const id = c.dataset.id;
   if (ui.select){ ui.selected.has(id)?ui.selected.delete(id):ui.selected.add(id); render(); }
   else openDetail(id);
@@ -393,6 +394,87 @@ function closeSheet(){
   $("#sheetRoot").innerHTML=""; document.removeEventListener("keydown", escClose);
 }
 const head = (title) => `<div class="sheethead"><h2>${title}</h2><button class="iconbtn" data-close aria-label="Kapat">✕</button></div>`;
+
+/* ---------- book menu (right click / long press) ---------- */
+let longPressed = false, lpTimer = null, lpStart = null;
+$("#grid").addEventListener("contextmenu", e=>{
+  const c = e.target.closest(".card"); if (!c || ui.select) return;
+  e.preventDefault(); openBookMenu(c.dataset.id, e.clientX, e.clientY);
+});
+$("#grid").addEventListener("touchstart", e=>{
+  const c = e.target.closest(".card"); if (!c || ui.select || e.touches.length !== 1) return;
+  const t = e.touches[0]; lpStart = {x:t.clientX, y:t.clientY}; longPressed = false;
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(()=>{ longPressed = true; navigator.vibrate?.(10); openBookMenu(c.dataset.id, lpStart.x, lpStart.y); }, 500);
+}, {passive:true});
+$("#grid").addEventListener("touchmove", e=>{
+  if (!lpStart) return; const t = e.touches[0];
+  if (Math.hypot(t.clientX-lpStart.x, t.clientY-lpStart.y) > 10) clearTimeout(lpTimer);
+}, {passive:true});
+for (const ev of ["touchend","touchcancel"]) $("#grid").addEventListener(ev, ()=>{ clearTimeout(lpTimer); lpStart = null; });
+
+function closeBookMenu(){ document.querySelector(".bmenu-scrim")?.remove(); }
+function openBookMenu(id, x, y){
+  const b = books.get(id); if (!b) return;
+  closeBookMenu();
+  const st = b.status || "unread";
+  const scrim = document.createElement("div"); scrim.className = "bmenu-scrim";
+  scrim.innerHTML = `<div class="bmenu" role="menu" aria-label="${esc(b.title)}">
+    <div class="bmenu-t">${esc(b.title||"Adsız")}</div>
+    <button role="menuitem" data-m="shelves">Raf düzenle</button>
+    <div class="bmenu-st">${Object.entries(STATUS).map(([k,v])=>`<button role="menuitemradio" aria-checked="${st===k}" data-m="st:${k}">${v}</button>`).join("")}</div>
+    <button role="menuitem" data-m="detail">Ayrıntılar</button>
+    <button role="menuitem" data-m="edit">Düzenle</button>
+    <button role="menuitem" data-m="del" class="danger">Sil</button>
+  </div>`;
+  document.body.appendChild(scrim);
+  const m = scrim.firstElementChild;
+  const r = m.getBoundingClientRect(), W = innerWidth, H = innerHeight;
+  m.style.left = Math.max(8, Math.min(x, W - r.width - 8)) + "px";
+  m.style.top = Math.max(8, Math.min(y, H - r.height - 8)) + "px";
+  m.querySelector("button").focus({preventScroll:true});
+  const esc2 = e=>{ if (e.key==="Escape"){ closeBookMenu(); document.removeEventListener("keydown", esc2); } };
+  document.addEventListener("keydown", esc2);
+  scrim.addEventListener("contextmenu", e=>{ e.preventDefault(); closeBookMenu(); });
+  scrim.addEventListener("click", async e=>{
+    const t = e.target.closest("[data-m]");
+    if (!t) { if (e.target === scrim) closeBookMenu(); return; }
+    const a = t.dataset.m;
+    if (a === "del") {
+      if (!t.dataset.armed) { t.dataset.armed = "1"; t.textContent = "Emin misin? Sil"; return; }
+      closeBookMenu(); await deleteBooks([id]); toast("Kitap silindi"); return;
+    }
+    closeBookMenu();
+    if (a === "shelves") openShelfPicker(id);
+    else if (a === "detail") openDetail(id);
+    else if (a === "edit") openBook(id);
+    else if (a.startsWith("st:")) { const k = a.slice(3); await saveBook({...books.get(id), status:k, updatedAt:Date.now()}); toast(`${b.title}: ${STATUS[k]}`); }
+  });
+}
+function openShelfPicker(id){
+  const b = books.get(id); if (!b) return;
+  const draw = () => {
+    const cur = new Set(books.get(id)?.shelves || []);
+    return shelfList().map(s=>`<label><input type="checkbox" value="${esc(s.id)}" ${cur.has(s.id)?"checked":""}>${esc(s.name)}</label>`).join("") || `<span class="meta">Henüz raf yok. Aşağıdan oluştur.</span>`;
+  };
+  const sh = openSheet(`${head("Raf düzenle")}
+    <p class="meta" style="margin:-6px 0 12px">${esc(b.title)}</p>
+    <div class="shelfpick" id="spPick">${draw()}</div>
+    <form class="lookup" id="spNew" style="margin-top:14px"><label class="f">Yeni raf<input id="spName" placeholder="Raf adı" autocomplete="off"></label><button class="btn" type="submit">Ekle</button></form>
+    <div class="foot" style="margin-top:14px"><span></span><button class="btn primary" data-close>Tamam</button></div>`);
+  sh.querySelector("#spPick").addEventListener("change", async ()=>{
+    const ids = [...sh.querySelectorAll("#spPick input:checked")].map(i=>i.value);
+    await saveBook({...books.get(id), shelves: ids, updatedAt: Date.now()});
+  });
+  sh.querySelector("#spNew").addEventListener("submit", async e=>{
+    e.preventDefault(); const name = sh.querySelector("#spName").value.trim(); if (!name) return;
+    const s = shelfByName(name, true); if (!shelves.has(s.id)) await saveShelf(s);
+    const nb = books.get(id); const set = new Set(nb.shelves||[]); set.add(s.id);
+    await saveBook({...nb, shelves:[...set], updatedAt:Date.now()});
+    sh.querySelector("#spPick").innerHTML = draw(); sh.querySelector("#spName").value = "";
+    toast(`“${s.name}” rafına eklendi`);
+  });
+}
 
 /* ---------- book detail (read view) ---------- */
 const ICON_ST = {
