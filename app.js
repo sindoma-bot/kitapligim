@@ -505,7 +505,7 @@ function openBook(id, prefill){
     const q = encodeURIComponent([f("title").value.trim(), f("author").value.trim()].filter(Boolean).join(" "));
     sh.querySelector("#storeLinks").innerHTML = [
       ["Kitapyurdu", `https://www.kitapyurdu.com/index.php?route=product/search&filter_name=${q}`],
-      ["idefix", `https://www.idefix.com/search?q=${q}`],
+      ["idefix", `https://www.idefix.com/arama?q=${q}`],
       ["Amazon", `https://www.amazon.com.tr/s?k=${q}&i=stripbooks`]
     ].map(([n,u])=>`<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${n}'da ara</a>`).join("");
   };
@@ -779,7 +779,7 @@ async function fillMissing(btn, sh){
       if (r.photoId) { const cur = books.get(b.id); if (cur) { await saveBook({...cur, photoId: r.photoId, coverUrl: "", coverSource: r.quelle}); found++; } }
     }
     const fromIdefix = [...books.values()].filter(x=>x.coverSource==="idefix").length;
-    txt.textContent = `Bitti: ${found} kapak bulundu.${fromIdefix?` idefix'ten gelen kapakları (${fromIdefix}) bir göz at, ilk sonuç her zaman doğru kitap olmayabilir.`:""}${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
+    txt.textContent = `Bitti: ${found} kapak bulundu.${fromIdefix?` ${fromIdefix} kapak idefix'ten geldi, yanlış baskı olabilir; bir göz at.`:""}${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
     btn.disabled = false;
     return;
   }

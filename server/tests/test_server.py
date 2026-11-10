@@ -165,11 +165,17 @@ def test_openlibrary_requires_matching_title(monkeypatch):
 
 def test_idefix_parsing(monkeypatch):
     from app import kapak
-    page = ('<img src="https://www.idefix.com/logo.png">'
-            '{"image":"https:\\/\\/idefix.akinoncdn.com\\/products\\/2023\\/01\\/02\\/123\\/abc-original.jpg"}')
-    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (200, page.encode(), "text/html"))
+    page = ('<img src="https://asset.idefix.com/images/app-icons/72x72.png">'
+            '<img src="https://image03.idefix.com/resize/216/0/product/30629290/efendi-beyaz-turklerin-buyuk-sirri-soner-yalcin-telefon-tutucu-bir-kar-tanesi-6a9825aa8a405.jpg">'
+            '<img src="https://image03.idefix.com/resize/216/0/product/1132833/efendi-2-beyaz-muslumanlarin-buyuk-sirri-654928515f957.jpg">'
+            '<img src="https://image03.idefix.com/resize/216/0/product/23360242/beyaz-turklerin-buyuk-sirri-efendi-69d8a6560673d.jpg">')
+    urls = []
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (urls.append(url), (200, page.encode(), "text/html"))[1])
     monkeypatch.setattr(kapak, "_warte", lambda *a: None)
     url, err = kapak.idefix("Efendi", "Soner Yalçın")
-    assert err is None and url == "https://idefix.akinoncdn.com/products/2023/01/02/123/abc-original.jpg"
+    assert "/arama?q=" in urls[0]
+    assert err is None and url == "https://image03.idefix.com/resize/500/0/product/23360242/beyaz-turklerin-buyuk-sirri-efendi-69d8a6560673d.jpg"
+    assert kapak.idefix("Efendi 2", "Soner Yalçın")[0].endswith("efendi-2-beyaz-muslumanlarin-buyuk-sirri-654928515f957.jpg")
+    assert kapak.idefix("Kürk Mantolu Madonna", "Sabahattin Ali") == (None, None)
     monkeypatch.setattr(kapak, "_get", lambda url, **kw: (403, b"", ""))
     assert kapak.idefix("Efendi", "") == (None, "idefix HTTP 403")

@@ -79,24 +79,50 @@ def kitapyurdu(titel: str, autor: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-IDEFIX_IMG = re.compile(
-    r'https://[a-z0-9.-]*(?:akinoncdn\.com|idefix\.com)/products/[^"\'\s<>\\)]+?\.(?:jpe?g|png|webp)', re.I)
+IDEFIX_IMG = re.compile(r'https://image\d*\.idefix\.com/resize/\d+/0/product/\d+/([a-z0-9-]+?)(?:-[0-9a-f]{8,})?\.(?:jpe?g|png|webp)', re.I)
+#: Zubehör mit Buchmotiv (Handyhalter, Tassen ...) steht oft vor dem Buch selbst
+IDEFIX_ZUBEHOER = {"telefon", "tutucu", "kupa", "ayrac", "defter", "kalem", "canta", "magnet", "rozet", "poster", "tisort", "bardak", "puzzle", "set"}
+_ASCII = str.maketrans("çğıöşüâîûÇĞİÖŞÜ", "cgiosuaiuCGIOSU")
+
+
+def _slug_tokens(text: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", (text or "").translate(_ASCII).lower()) if t]
+
+
+def idefix_waehle(seite: str, titel: str, autor: str) -> str | None:
+    """Wählt aus den Produktbildern das, dessen Dateiname am besten zum Titel passt."""
+    t = _slug_tokens(titel)
+    if not t:
+        return None
+    a = set(_slug_tokens(autor))
+    beste, wert = None, None
+    for i, m in enumerate(IDEFIX_IMG.finditer(seite)):
+        slug = _slug_tokens(m.group(1))
+        if IDEFIX_ZUBEHOER & set(slug):
+            continue
+        treffer = sum(1 for x in t if x in slug)
+        if treffer / len(t) < (1.0 if len(t) <= 2 else 0.6):
+            continue
+        extra = len([x for x in slug if x not in t and x not in a])
+        w = (treffer, -extra, -i)
+        if wert is None or w > wert:
+            beste, wert = m.group(0), w
+    if not beste:
+        return None
+    return re.sub(r"/resize/\d+/0/", "/resize/500/0/", beste)
 
 
 def idefix(titel: str, autor: str) -> tuple[str | None, str | None]:
-    """Erstes Produktbild der idefix-Suche (Titel + Autor). Höchstens eine Abfrage pro Sekunde."""
+    """Produktbild aus der idefix-Suche (Titel + Autor), passend zum Titel. Höchstens eine Abfrage pro Sekunde."""
     q = " ".join(x for x in (titel, autor.split(",")[0] if autor else "") if x).strip()
     if not q:
         return None, None
     _warte("idefix", 1.0)
-    status, body, _ = _get("https://www.idefix.com/search?q=" + urllib.parse.quote(q), accept="text/html")
+    status, body, _ = _get("https://www.idefix.com/arama?q=" + urllib.parse.quote(q), accept="text/html")
     if status != 200:
         return None, f"idefix HTTP {status}"
-    seite = body.decode("utf-8", "replace").replace("\\u002F", "/").replace("\\/", "/")
-    bild = IDEFIX_IMG.search(seite)
-    if not bild:
-        return None, "idefix: kein Produktbild erkannt"
-    return html.unescape(bild.group(0)), None
+    seite = html.unescape(body.decode("utf-8", "replace").replace("\\u002F", "/").replace("\\/", "/"))
+    return idefix_waehle(seite, titel, autor), None
 
 
 def google(titel: str, autor: str, isbn: str, key: str) -> tuple[str | None, str | None]:
@@ -168,6 +194,8 @@ def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
         if url:
             try:
                 bild = bild_laden(url)
+                if not bild and "/resize/500/0/" in url:  # falls idefix diese Größe nicht anbietet
+                    bild = bild_laden(url.replace("/resize/500/0/", "/resize/216/0/"))
             except Exception as e:
                 bild, _ = None, fehler.append(f"{name} Bild: {type(e).__name__}")
             if bild:
