@@ -1,6 +1,6 @@
 """Cover-Suche auf der NAS.
 
-Quellen in dieser Reihenfolge (Kitapyurdu sperrt automatische Abfragen mit HTTP 403):
+Quellen in dieser Reihenfolge (Kitapyurdu sperrt automatische Abfragen mit HTTP 403, idefix per robots.txt):
   1. Google Books (mit GOOGLE_BOOKS_KEY zuverlässig; ohne Schlüssel oft "429 Quota").
   2. Open Library (ISBN oder Titel/Autor, nur bei passendem Titel).
 Das gefundene Bild wird heruntergeladen und als Foto auf der NAS gespeichert, damit es offline und
@@ -178,12 +178,14 @@ def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
     """Sucht ein Cover. Ergebnis: {bild: bytes|None, quelle, fehler: [..]}"""
     fehler: list[str] = []
     # Kitapyurdu antwortet automatischen Abfragen mit HTTP 403 (gesperrt); deshalb nicht mehr abgefragt.
+    # idefix verbietet automatische Suchabfragen (robots.txt sperrt /arama); deshalb nur als Link in der App.
     for name, f in (
         ("Google Books", lambda: google(titel, autor, isbn, google_key)),
-        # zweiter Versuch: nur Titel (Autor oft anders geschrieben, z. B. "Prof.Dr." oder zwei Autoren)
-        ("Google Books", lambda: google(titel, "", "", google_key) if autor and not isbn else (None, None)),
+        # zweiter Versuch: nur Titel (Autor oft anders geschrieben, z. B. "Prof.Dr." oder zwei Autoren);
+        # nicht bei Kontingent-Fehler (429), der würde nur noch einmal kommen
+        ("Google Books", lambda: google(titel, "", "", google_key)
+            if autor and not isbn and not any("HTTP 429" in e for e in fehler) else (None, None)),
         ("Open Library", lambda: openlibrary(titel, autor, isbn)),
-        ("idefix", lambda: idefix(titel, autor)),
     ):
         try:
             url, err = f()

@@ -57,7 +57,7 @@ Nach 8 falschen Passwörtern sperrt der Server die Anmeldung für 15 Minuten.
 
 „Eksikleri internetten bul“ sucht auf der NAS bei Google Books und Open Library (nur bei passendem Titel) und
 speichert das gefundene Bild in `data/fotos`. Am Ende zeigt die App, welche Quelle Fehler gemeldet hat.
-Kitapyurdu sperrt automatische Abfragen (HTTP 403); dafür gibt es im Buch die Suchlinks unter „Kapağı mağazadan al“.
+Kitapyurdu (HTTP 403) und idefix (robots.txt) erlauben keine automatischen Abfragen; dafür gibt es im Buch die Suchlinks unter „Kapağı mağazadan al“.
 
 Google Books ohne Schlüssel antwortet oft mit „HTTP 429“. Optional einen kostenlosen API-Schlüssel anlegen
 (console.cloud.google.com → APIs → „Books API“ aktivieren → Anmeldedaten → API-Schlüssel) und in

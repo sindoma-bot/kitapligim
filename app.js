@@ -779,7 +779,7 @@ async function fillMissing(btn, sh){
       if (r.photoId) { const cur = books.get(b.id); if (cur) { await saveBook({...cur, photoId: r.photoId, coverUrl: "", coverSource: r.quelle}); found++; } }
     }
     const fromIdefix = [...books.values()].filter(x=>x.coverSource==="idefix").length;
-    txt.textContent = `Bitti: ${found} kapak bulundu.${fromIdefix?` ${fromIdefix} kapak idefix'ten geldi, yanlış baskı olabilir; bir göz at.`:""}${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
+    txt.textContent = `Bitti: ${found} kapak bulundu.${fromIdefix?` ${fromIdefix} kapak idefix'ten geldi, yanlış baskı olabilir; bir göz at.`:""}${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}${[...errs.keys()].some(k=>k.includes("429"))?" Google'ın günlük sorgu hakkı dolmuş olabilir; yarın sabah tekrar dene.":""}`;
     btn.disabled = false;
     return;
   }
