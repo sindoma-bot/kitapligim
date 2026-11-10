@@ -344,3 +344,6 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
   .photo{grid-template-columns:96px minmax(0,1fr);grid-template-areas:"pv pm" "pb pb"}
   .photo .pbtns{display:flex;flex-wrap:wrap;gap:6px}
 }
+.dleft{display:grid;gap:8px;min-width:0}
+.dleft .dstars{justify-content:center;gap:0}
+.dleft .dstars button{font-size:clamp(1.1rem,5.5vw,1.45rem);padding:1px}

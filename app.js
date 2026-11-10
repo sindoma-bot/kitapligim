@@ -541,14 +541,14 @@ function openDetail(id){
   const sh = openSheet(`<div class="pagehead"><button class="back" data-close aria-label="Geri">${BACK_ICON}</button><span class="pt">${esc(b.title||"Adsız")}</span><span class="pa"><button type="button" class="barbtn" id="dEdit">Düzenle</button></span></div>
     <div class="detail">
       <div class="dtop">
-        <button type="button" class="dcover" id="dZoom" aria-label="Kapağı büyüt">${coverHTML(b)}</button>
+        <div class="dleft"><button type="button" class="dcover" id="dZoom" aria-label="Kapağı büyüt">${coverHTML(b)}</button>
+          <div class="dstars" id="dStars" aria-label="Puan"></div></div>
         <div class="dside">
           <div class="dhead"><h2>${esc(b.title||"Adsız")}</h2>
             ${b.author?`<div class="dauthor">${esc(b.author)}</div>`:""}${b.publisher?`<div class="dpub">${esc(b.publisher)}</div>`:""}</div>
           <div class="dstatus" role="group" aria-label="Okuma durumu">
             ${Object.keys(ST_VERB).map(k=>`<button type="button" data-st="${k}" aria-pressed="${(b.status||"unread")===k}">${ICON_ST[k]}<span>${ST_VERB[k]}</span></button>`).join("")}
           </div>
-          <div class="dstars" id="dStars" aria-label="Puan"></div>
         </div>
       </div>
       <section class="dsec"><h3>Notum</h3>
