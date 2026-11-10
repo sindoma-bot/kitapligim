@@ -232,6 +232,22 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
         d = db.yazar(key)
         # Nicht gefundene Autoren erst nach 30 Tagen erneut suchen; neu=1 erzwingt die Suche
         if d and (d.get("bio") or d.get("manuell") or (not neu and time.time() - d.get("gesucht", 0) < 30 * 86400)):
+            # Foto fehlt noch (z. B. Download gescheitert): höchstens einmal am Tag erneut versuchen
+            if not d.get("photoId") and d.get("quelle") == "Vikipedi" and time.time() - d.get("bild_versuch", 0) > 86400:
+                d["bild_versuch"] = time.time()
+                if "bild_url" not in d:  # Eintrag aus der ersten Version ohne gemerkte Bildadresse
+                    try:
+                        info, _ = await run_in_threadpool(yazar_suche, d.get("name") or ad)
+                    except Exception:
+                        info = None
+                    d["bild_url"] = (info or {}).get("bild_url") or ""
+                if d["bild_url"]:
+                    bild = await run_in_threadpool(yazar_bild, d["bild_url"])
+                    if bild:
+                        fid = "yzr-" + secrets.token_hex(12)
+                        foto_pfad(fid).write_bytes(bild)
+                        d["photoId"] = fid
+                db.yazar_speichern(key, d, time.time())
             return _yazar_antwort(d)
         try:
             info, err = await run_in_threadpool(yazar_suche, ad)
@@ -241,7 +257,8 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
             return no_store({"name": ad, "bio": None, "fehler": err})
         d = {"name": ad, "bio": None, "photoId": None, "url": None, "quelle": None, "gesucht": time.time()}
         if info:
-            d.update(name=info["titel"], bio=info["bio"], url=info["url"], quelle="Vikipedi")
+            d.update(name=info["titel"], bio=info["bio"], url=info["url"], quelle="Vikipedi",
+                     bild_url=info.get("bild_url") or "", bild_versuch=time.time())
             bild = await run_in_threadpool(yazar_bild, info.get("bild_url") or "")
             if bild:
                 fid = "yzr-" + secrets.token_hex(12)
@@ -261,8 +278,14 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
         if not key:
             raise HTTPException(400, "Yazar adı gerekli.")
         d = db.yazar(key) or {"name": ad, "photoId": None, "url": None}
-        bio = str(body.get("bio") or "").strip()[:5000]
-        d.update(bio=bio or None, manuell=bool(bio), quelle=None if bio else d.get("quelle"), gesucht=time.time())
+        if "bio" in body:
+            bio = str(body.get("bio") or "").strip()[:5000]
+            d.update(bio=bio or None, manuell=bool(bio), quelle=None if bio else d.get("quelle"), gesucht=time.time())
+        if "photoId" in body:
+            fid = str(body.get("photoId") or "")
+            if fid and not (FOTO_ID.match(fid) and foto_pfad(fid).is_file()):
+                raise HTTPException(400, "Fotoğraf yok.")
+            d["photoId"] = fid or None
         db.yazar_speichern(key, d, time.time())
         return _yazar_antwort(d)
 

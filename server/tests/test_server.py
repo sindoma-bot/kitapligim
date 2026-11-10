@@ -221,3 +221,21 @@ def test_vikipedi_parsing(monkeypatch):
     info, err = kapak.vikipedi("Sait Faik Abasıyanık")
     assert err is None and info["bio"] == "Türk öykü yazarı." and info["bild_url"].endswith("a.jpg")
     assert kapak.vikipedi("Başka Birisi") == (None, None)
+
+
+def test_author_photo_retry_and_own_photo(tmp_path, web):
+    bilder = [None, b"\xff\xd8\xff" + b"2" * 2000]
+    c = TestClient(erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": hashlib.sha256(PW.encode()).hexdigest()},
+                                yazar_suche=lambda ad: ({"titel": ad, "bio": "Bio.", "bild_url": "u", "url": "w"}, None),
+                                yazar_bild=lambda u: bilder.pop(0)))
+    login(c)
+    assert c.get("/api/yazar?ad=Ali%20Veli").json()["photoId"] is None  # Download gescheitert
+    import time as _t
+    from unittest import mock
+    with mock.patch("app.main.time.time", return_value=_t.time() + 2 * 86400):
+        assert c.get("/api/yazar?ad=Ali%20Veli").json()["photoId"].startswith("yzr-")
+    jpg = b"\xff\xd8\xff" + b"3" * 100
+    assert c.put("/api/fotos/eigen-123456", content=jpg).status_code == 201
+    r = c.put("/api/yazar", json={"ad": "Ali Veli", "photoId": "eigen-123456"}).json()
+    assert r["photoId"] == "eigen-123456" and r["bio"] == "Bio."
+    assert c.put("/api/yazar", json={"ad": "Ali Veli", "photoId": "gibts-nicht-1"}).status_code == 400

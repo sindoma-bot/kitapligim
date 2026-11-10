@@ -251,7 +251,8 @@ def vikipedi(name: str, sprache: str = "tr") -> tuple[dict | None, str | None]:
         return {
             "titel": d.get("title") or titel,
             "bio": d["extract"].strip(),
-            "bild_url": ((d.get("originalimage") or d.get("thumbnail") or {}).get("source")) or "",
+            # kleines Vorschaubild (ca. 320 px) statt Original, das oft mehrere MB groß ist
+            "bild_url": ((d.get("thumbnail") or d.get("originalimage") or {}).get("source")) or "",
             "url": ((d.get("content_urls") or {}).get("desktop") or {}).get("page") or f"{base}/wiki/" + urllib.parse.quote(titel.replace(" ", "_")),
         }, None
     return None, None
@@ -260,11 +261,13 @@ def vikipedi(name: str, sprache: str = "tr") -> tuple[dict | None, str | None]:
 def yazar_bild(url: str) -> bytes | None:
     if not url:
         return None
-    req = urllib.request.Request(url, headers={"User-Agent": WIKI_UA, "Accept": "image/*"})
+    req = urllib.request.Request(url, headers={"User-Agent": WIKI_UA, "Accept": "image/jpeg,image/png,image/webp"})
     try:
-        with urllib.request.urlopen(req, timeout=12) as r:
-            body = r.read(4 * 1024 * 1024)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            body = r.read(6 * 1024 * 1024 + 1)
     except Exception:
+        return None
+    if len(body) > 6 * 1024 * 1024:  # abgeschnitten
         return None
     if body.startswith(b"\xff\xd8\xff") or body.startswith(b"\x89PNG") or body.startswith(b"RIFF"):
         return body

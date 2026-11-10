@@ -374,3 +374,9 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
 .yzl::before{content:"• "}
 #yzForm textarea{width:100%;box-sizing:border-box;font:inherit;padding:10px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg);color:var(--fg)}
 @media (max-width:420px){.yz{grid-template-columns:64px minmax(0,1fr);gap:12px}.yzp{width:64px;height:64px}}
+.yzp{position:relative;padding:0;cursor:pointer;font:inherit;overflow:visible}
+.yzp:disabled{cursor:default}
+.yzp>img,.yzp>.yzi{border-radius:50%;overflow:hidden;width:100%;height:100%;display:grid;place-items:center}
+.yzp>img{object-fit:cover}
+.yzcam{position:absolute;right:-4px;bottom:-4px;width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;box-shadow:0 0 0 2px var(--surface)}
+.yzcam svg{width:15px;height:15px}

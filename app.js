@@ -539,13 +539,14 @@ function yazarHTML(b, y){
   const others = [...books.values()].filter(x=>x.id!==b.id && yazarKey(x.author)===key).sort((a,c)=>coll.compare(a.title||"",c.title||""));
   const works = others.length ? `<div class="yzw"><b>Kitaplığımdaki diğer eserleri (${others.length}):</b>${others.slice(0,12).map(x=>`<button type="button" class="yzl" data-open="${esc(x.id)}">${esc(x.title)}</button>`).join("")}${others.length>12?`<span class="meta">ve ${others.length-12} kitap daha</span>`:""}</div>` : "";
   const name = esc(y?.name || firstAuthor(b.author));
-  const photo = y?.photoId ? `<img data-photo="${esc(y.photoId)}" alt="" hidden>` : `<span class="yzi">${esc((firstAuthor(b.author)[0]||"?").toLocaleUpperCase("tr"))}</span>`;
+  const photo = (y?.photoId ? `<img data-photo="${esc(y.photoId)}" alt="" hidden>` : `<span class="yzi">${esc((firstAuthor(b.author)[0]||"?").toLocaleUpperCase("tr"))}</span>`)
+    + (Sync.enabled ? `<span class="yzcam" aria-hidden="true">${svgI('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>')}</span>` : "");
   let body;
   if (!y) body = `<p class="meta">${Sync.enabled ? "Özgeçmiş aranıyor…" : "Özgeçmiş NAS bağlantısıyla gelir."}</p>`;
   else if (y.bio) body = `<div class="yzbio clamp" id="yzBio">${esc(y.bio)}</div><button type="button" class="more" id="yzMore" hidden>Devamını oku ↓</button>
       <div class="meta yzsrc">${y.manuell?"Kendi notun":`Kaynak: ${y.url?`<a href="${esc(y.url)}" target="_blank" rel="noopener">Vikipedi</a>`:"Vikipedi"}`} · <button type="button" class="linkbtn" id="yzEdit">Düzenle</button></div>`;
   else body = `<p class="meta">${y.fehler?`Vikipedi'ye ulaşılamadı (${esc(y.fehler)}).`:"Vikipedi'de bu yazar bulunamadı."} <button type="button" class="linkbtn" id="yzEdit">Kendin yaz</button>${y.fehler?` · <button type="button" class="linkbtn" id="yzRetry">Tekrar dene</button>`:""}</p>`;
-  return `<div class="yzp">${photo}</div><div class="yzt"><div class="yzn">${name}</div><div class="meta">Özgeçmişi</div>${body}
+  return `<button type="button" class="yzp" id="yzPhoto" aria-label="Yazar fotoğrafı seç" ${Sync.enabled?"":"disabled"}>${photo}</button><div class="yzt"><div class="yzn">${name}</div><div class="meta">Özgeçmişi</div>${body}
     <div id="yzForm" hidden><textarea id="yzText" rows="6" placeholder="Yazar hakkında kısa bilgi">${esc(y?.bio||"")}</textarea>
       <div class="foot"><button type="button" class="btn" id="yzCancel">Vazgeç</button><button type="button" class="btn primary" id="yzSave">Kaydet</button></div></div>${works}</div>`;
 }
@@ -553,7 +554,7 @@ async function loadYazar(sh, b, neu){
   const key = yazarKey(b.author), box = sh.querySelector("#yzBox"); if (!box) return;
   const draw = y => { box.innerHTML = yazarHTML(b, y); hydratePhotos(box); wireYazar(sh, b); };
   draw(yazarCache.get(key));
-  if (!Sync.enabled || (yazarCache.get(key) && !neu && (yazarCache.get(key).bio || Date.now()-(yazarCache.get(key).at||0) < 7*86400000))) return;
+  if (!Sync.enabled) return;
   try {
     const r = await fetch(`api/yazar?ad=${encodeURIComponent(firstAuthor(b.author))}${neu?"&neu=1":""}`, {credentials:"same-origin", cache:"no-store"});
     if (!r.ok) return;
@@ -580,6 +581,24 @@ function wireYazar(sh, b){
     } catch { toast("Kaydedilemedi"); }
   });
   box.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click", ()=>openDetail(x.dataset.open)));
+  box.querySelector("#yzPhoto")?.addEventListener("click", ()=>{
+    if (!Sync.enabled) return;
+    const inp = document.createElement("input"); inp.type = "file"; inp.accept = "image/*";
+    inp.onchange = async ()=>{
+      const file = inp.files[0]; if (!file) return;
+      try {
+        const blob = await shrink(file, 400);
+        const fid = "yzr-" + Store.newId().replace(/[^A-Za-z0-9]/g,"").slice(0,24);
+        let r = await fetch(`api/fotos/${fid}`, {method:"PUT", credentials:"same-origin", body: blob});
+        if (!r.ok) throw 0;
+        r = await fetch("api/yazar", {method:"PUT", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ad: firstAuthor(b.author), photoId: fid})});
+        if (!r.ok) throw 0;
+        const y = {...await r.json(), at: Date.now()}; yazarCache.set(yazarKey(b.author), y); saveYazarCache();
+        box.innerHTML = yazarHTML(b, y); hydratePhotos(box); wireYazar(sh, b); toast("Fotoğraf kaydedildi");
+      } catch { toast("Fotoğraf kaydedilemedi"); }
+    };
+    inp.click();
+  });
 }
 
 /* ---------- book detail (read view) ---------- */
