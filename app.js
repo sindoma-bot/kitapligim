@@ -244,7 +244,7 @@ function matches(b){
   else if (ui.status==="notes") { if (!String(b.note||"").trim()) return false; }
   else if (ui.status!=="all" && (b.status||"unread")!==ui.status) return false;
   if (!ui.q) return true;
-  const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.about,b.loanTo,b.year].join(" "));
+  const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.about,b.loanTo,b.year,b.category,b.origLanguage].join(" "));
   return low(ui.q).split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
 }
 function sorted(list){
@@ -278,12 +278,13 @@ function listHTML(view){
     return `<tr data-id="${esc(b.id)}" ${ui.select?`role="checkbox" aria-checked="${sel}"`:""}>
       <td class="lk"><span class="thumb">${coverHTML(b)}</span><span class="lt"><b>${esc(b.title||"Adsız")}</b><small>${esc(b.author||"")}</small></span></td>
       <td class="la">${esc(b.author||"")}</td>
+      <td class="lc">${esc(String(b.category||"").split(/\s*[>›]\s*/).filter(Boolean).pop()||"")}</td>
       <td class="lr">${esc(raf)}</td>
       <td class="ls"><span class="st st-${st}">${STATUS_ICON[st]}${STATUS[st]}</span>${b.loanTo?`<span class="tag loan">Ödünç</span>`:""}</td>
       <td class="lx"><button class="rb" data-rowact="detail" aria-label="Ayrıntılar">${NAVI.all}</button><button class="rb" data-rowact="menu" aria-label="Diğer">⋯</button></td>
     </tr>`;
   }).join("");
-  return `<table class="booktable"><thead><tr><th>Kitap</th><th class="la">Yazar</th><th class="lr">Raf</th><th class="ls">Durum</th><th class="lx"><span class="sr">İşlemler</span></th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table class="booktable"><thead><tr><th>Kitap</th><th class="la">Yazar</th><th class="lc">Kategori</th><th class="lr">Raf</th><th class="ls">Durum</th><th class="lx"><span class="sr">İşlemler</span></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 /* ---------- render ---------- */
@@ -536,7 +537,8 @@ const ST_VERB = {unread:"Okuyacağım", reading:"Okuyorum", read:"Okudum"};
 const BACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 function openDetail(id){
   const b = books.get(id); if (!b) return;
-  const künye = [["Yayınevi",b.publisher],["Yayın yılı",b.year],["Dil",b.language],["Sayfa sayısı",b.pages],["Çevirmen",b.translator],["ISBN",b.isbn]].filter(([,v])=>v);
+  const künye = [["Yayınevi",b.publisher],["Yayın yılı",b.year],["Dil",b.language],["Orijinal dili",b.origLanguage],["Çevirmen",b.translator],["Sayfa sayısı",b.pages],["ISBN",b.isbn]].filter(([,v])=>v);
+  const kategori = String(b.category||"").split(/\s*[>›]\s*/).filter(Boolean);
   const raf = (b.shelves||[]).map(sid=>shelves.get(sid)?.name).filter(Boolean);
   const sh = openSheet(`<div class="pagehead"><button class="back" data-close aria-label="Geri">${BACK_ICON}</button><span class="pt">${esc(b.title||"Adsız")}</span><span class="pa"><button type="button" class="barbtn" id="dEdit">Düzenle</button></span></div>
     <div class="detail">
@@ -557,7 +559,7 @@ function openDetail(id){
           <div class="foot"><button type="button" class="btn" id="dNoteCancel">Vazgeç</button><button type="button" class="btn primary" id="dNoteSave">Notu kaydet</button></div></div>
       </section>
       ${b.about?`<section class="dsec"><h3>Hakkında</h3><div class="dabout clamp" id="dAbout">${esc(b.about)}</div><button type="button" class="more" id="dMore" hidden>Devamını oku ↓</button></section>`:""}
-      ${künye.length?`<section class="dsec"><h3>Künye</h3><dl class="dkunye">${künye.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>`:""}
+      ${(künye.length||kategori.length)?`<section class="dsec"><h3>Künye</h3><dl class="dkunye">${künye.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>${kategori.length?`<div class="dcat">${kategori.map((c,i)=>i===kategori.length-1?`<b>${esc(c)}</b>`:esc(c)).join(" › ")}</div>`:""}</section>`:""}
       <section class="dsec"><h3>Kitaplığımda</h3><dl class="dkunye">
         <dt>Raf</dt><dd>${raf.length?raf.map(esc).join(", "):"Rafsız"}</dd>
         ${b.loanTo?`<dt>Ödünç</dt><dd>${esc(b.loanTo)}${b.loanDate?` · ${esc(new Date(b.loanDate).toLocaleDateString("tr-TR"))}`:""}</dd>`:""}
@@ -651,6 +653,13 @@ function openBook(id, prefill, fromDetail){
         <label class="f">Yayınevi<input id="f_publisher" value="${esc(b.publisher)}" autocomplete="off" list="publishers"></label>
         <label class="f">Çevirmen<input id="f_translator" value="${esc(b.translator)}" autocomplete="off"></label>
       </div>
+      <label class="f">Kategori<input id="f_category" value="${esc(b.category)}" autocomplete="off" list="categories" placeholder="Örn. Edebiyat > Roman > Yerli"></label>
+      <datalist id="categories">${[...new Set([...books.values()].map(x=>x.category).filter(Boolean))].sort(coll.compare).slice(0,300).map(a=>`<option value="${esc(a)}">`).join("")}</datalist>
+      <div class="row2">
+        <label class="f">Dil<input id="f_language" value="${esc(b.language)}" autocomplete="off" placeholder="Türkçe"></label>
+        <label class="f">Orijinal dili<input id="f_origLanguage" value="${esc(b.origLanguage)}" autocomplete="off" placeholder="Çeviriyse, örn. Rusça" list="langs"></label>
+      </div>
+      <datalist id="langs">${["Türkçe","İngilizce","Almanca","Fransızca","Rusça","Arapça","Farsça","İspanyolca","İtalyanca","Japonca",...new Set([...books.values()].map(x=>x.origLanguage).filter(Boolean))].filter((v,i,a)=>a.indexOf(v)===i).map(a=>`<option value="${esc(a)}">`).join("")}</datalist>
       <datalist id="publishers">${[...new Set([...books.values()].map(x=>x.publisher).filter(Boolean))].sort(coll.compare).slice(0,400).map(a=>`<option value="${esc(a)}">`).join("")}</datalist>
       <div class="row2">
         <label class="f">Yıl<input id="f_year" inputmode="numeric" value="${esc(b.year)}"></label>
@@ -665,10 +674,6 @@ function openBook(id, prefill, fromDetail){
         <label class="f">Ödünç tarihi<input id="f_loanDate" type="date" value="${esc(b.loanDate)}"></label>
       </div>
       <label class="f">Notlarım<textarea id="f_note" placeholder="Altını çizdiğin yerler, düşüncelerin, nereden aldığın…">${esc(b.note)}</textarea></label>
-      <div class="row2">
-        <label class="f">Dil<input id="f_language" value="${esc(b.language)}" autocomplete="off" placeholder="Türkçe"></label>
-        <span></span>
-      </div>
       <details ${b.about?"":"open"}><summary class="meta" style="cursor:pointer;padding-block:4px">Hakkında (kitabın tanıtımı)</summary>
         <label class="f" style="margin-top:6px"><span class="sr">Hakkında</span><textarea id="f_about" placeholder="Arka kapak yazısı">${esc(b.about)}</textarea></label>
       </details>
@@ -762,7 +767,7 @@ function openBook(id, prefill, fromDetail){
     return {title:v("title"), author:v("author"), publisher:v("publisher"), translator:v("translator"), year:v("year"), pages:v("pages"),
       isbn:Lookup.cleanIsbn(v("isbn")), status:v("status"), rating,
       shelves:[...sh.querySelectorAll("#shelfpick input:checked")].map(i=>i.value),
-      loanTo:v("loanTo"), loanDate:v("loanDate"), note:f("note").value, language:v("language"), about:f("about").value};
+      loanTo:v("loanTo"), loanDate:v("loanDate"), note:f("note").value, language:v("language"), origLanguage:v("origLanguage"), category:v("category"), about:f("about").value};
   }
   if (id) armable(sh.querySelector("#delBook"), "Sil", "Emin misin?", async ()=>{ await deleteBooks([id]); closeSheet(); toast("Kitap silindi"); });
   sh.querySelector("#bookForm").addEventListener("submit", async e=>{
@@ -1034,7 +1039,7 @@ async function nasCover(b){
 }
 
 /* ---------- CSV ---------- */
-const COLS = [["title","Başlık"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["status","Durum"],["rating","Puan"],["shelves","Raflar"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["note","Notum"],["language","Dil"],["about","Hakkında"],["addedAt","Eklenme tarihi"]];
+const COLS = [["title","Başlık"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["status","Durum"],["rating","Puan"],["shelves","Raflar"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["note","Notum"],["language","Dil"],["origLanguage","Orijinal dili"],["category","Kategori"],["about","Hakkında"],["addedAt","Eklenme tarihi"]];
 const csvCell = v => { v = String(v ?? ""); return /[";\n\r]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
 function buildCsv(){
   const rows = [COLS.map(c=>c[1])];
@@ -1086,9 +1091,11 @@ const ALIAS = {
   note:["not","notlar","notlarım","notum","note","notes"],
   about:["hakkında","hakkinda","açıklama","tanıtım","özet","description","about"],
   language:["kitap dili","dil","language"],
+  origLanguage:["orijinal dili","orijinal dil","asıl dili","original language"],
+  category:["kategori","tür","tur","category","genre"],
   addedAt:["eklenme tarihi","eklenme","date added"]
 };
-const FIELD_LABELS = [["title","Kitap adı"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["language","Dil"],["shelves","Raf"],["status","Durum"],["rating","Puan"],["note","Notum"],["about","Hakkında"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["addedAt","Eklenme tarihi"]];
+const FIELD_LABELS = [["title","Kitap adı"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["language","Dil"],["origLanguage","Orijinal dili"],["category","Kategori"],["shelves","Raf"],["status","Durum"],["rating","Puan"],["note","Notum"],["about","Hakkında"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["addedAt","Eklenme tarihi"]];
 $("#csvInput").addEventListener("change", async e=>{
   const file = e.target.files[0]; e.target.value=""; if(!file) return;
   let text = await file.text();
@@ -1159,7 +1166,7 @@ async function importRows(body, map){
     const added = Date.parse(g("addedAt"));
     newBooks.push({id:Store.newId(), title, author:g("author"), publisher:g("publisher"), translator:g("translator"), year:g("year"), pages:g("pages"),
       isbn, status:statusOf(g("status")), rating:Math.max(0,Math.min(5,parseInt(g("rating"))||0)),
-      shelves:sids, loanTo:g("loanTo"), loanDate:g("loanDate"), note:g("note"), about:g("about"), language:g("language"), photoId:null, coverUrl:"",
+      shelves:sids, loanTo:g("loanTo"), loanDate:g("loanDate"), note:g("note"), about:g("about"), language:g("language"), origLanguage:g("origLanguage"), category:g("category"), photoId:null, coverUrl:"",
       addedAt: isNaN(added) ? Date.now()-i : added, updatedAt:Date.now(), sample:false});
   }
   try {

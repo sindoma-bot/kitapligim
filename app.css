@@ -352,3 +352,7 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
 .pstars button{font-size:1.1rem;padding:1px;line-height:1}
 .photo .pvcol #pv{grid-area:auto}
 .pstars button{color:var(--line)}.pstars button.on{color:var(--brass)}
+.dcat{font-size:.88rem;color:var(--muted);background:var(--surface-2);border-radius:8px;padding:8px 12px}
+.dcat b{color:var(--fg);font-weight:600}
+.lc{color:var(--muted)}
+@media (max-width:899px){.booktable .lc{display:none}}
