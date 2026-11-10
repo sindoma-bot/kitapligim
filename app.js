@@ -622,7 +622,7 @@ function openBook(id, prefill, fromDetail){
         <button type="button" class="btn" id="fetchIsbn">Bilgileri getir</button>
       </div>
       <div class="photo">
-        <div id="pv">${coverHTML(b)}</div>
+        <div class="pvcol"><div id="pv">${coverHTML(b)}</div><div class="stars pstars" id="stars" aria-label="Puan"></div></div>
         <div class="pbtns">
           <button type="button" class="btn" id="takePhoto">Kapağı fotoğrafla</button>
           <button type="button" class="btn" id="pickPhoto">Galeriden seç</button>
@@ -630,7 +630,6 @@ function openBook(id, prefill, fromDetail){
           ${(b.photoId||b.coverUrl)?`<button type="button" class="btn" id="rmPhoto">Kapağı kaldır</button>`:""}
         </div>
         <div class="pmeta">
-          <div class="f" style="display:grid;gap:4px;font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Puan<div class="stars" id="stars"></div></div>
           <div style="font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Raflar</div>
           <div class="shelfpick" id="shelfpick">
             ${sl.map(s=>`<label><input type="checkbox" value="${esc(s.id)}" ${(b.shelves||[]).includes(s.id)?"checked":""}>${esc(s.name)}</label>`).join("") || `<span class="meta">Henüz raf yok. Ana ekrandaki “+ Raf ekle” ile oluşturabilirsin.</span>`}
