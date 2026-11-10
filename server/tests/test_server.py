@@ -150,3 +150,14 @@ def test_kitapyurdu_parsing(monkeypatch):
     monkeypatch.setattr(kapak, "_warte", lambda *a: None)
     url, err = kapak.kitapyurdu("Efendi", "Soner Yalçın")
     assert err is None and url == "https://img.kitapyurdu.com/v1/getImage/fn:222/wh:true/wi:500"
+
+
+def test_openlibrary_requires_matching_title(monkeypatch):
+    import json as _j
+    from app import kapak
+    docs = {"docs": [{"title": "Tamamen Başka", "cover_i": 1}, {"title": "Kürk Mantolu Madonna", "cover_i": 2}]}
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (200, _j.dumps(docs).encode(), "application/json"))
+    url, _ = kapak.openlibrary("Kürk Mantolu Madonna", "Sabahattin Ali", "")
+    assert url.endswith("/b/id/2-L.jpg")
+    url, _ = kapak.openlibrary("Yok Böyle Kitap", "", "")
+    assert url is None

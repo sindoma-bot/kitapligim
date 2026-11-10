@@ -1,9 +1,8 @@
 """Cover-Suche auf der NAS.
 
-Quellen in dieser Reihenfolge:
-  1. Kitapyurdu-Suche (Titel + Autor), erstes Ergebnisbild. Gute Abdeckung für türkische Bücher.
-  2. Google Books (mit GOOGLE_BOOKS_KEY zuverlässig; ohne Schlüssel oft "429 Quota").
-  3. Open Library (ISBN oder Titel/Autor).
+Quellen in dieser Reihenfolge (Kitapyurdu sperrt automatische Abfragen mit HTTP 403):
+  1. Google Books (mit GOOGLE_BOOKS_KEY zuverlässig; ohne Schlüssel oft "429 Quota").
+  2. Open Library (ISBN oder Titel/Autor, nur bei passendem Titel).
 Das gefundene Bild wird heruntergeladen und als Foto auf der NAS gespeichert, damit es offline und
 dauerhaft verfügbar ist. Abfragen an Kitapyurdu höchstens eine pro Sekunde.
 """
@@ -106,14 +105,16 @@ def google(titel: str, autor: str, isbn: str, key: str) -> tuple[str | None, str
 def openlibrary(titel: str, autor: str, isbn: str) -> tuple[str | None, str | None]:
     if isbn:
         return f"https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg?default=false", None
-    q = {"title": titel, "limit": "3", "fields": "cover_i,title"}
+    q = {"title": titel, "limit": "5", "fields": "cover_i,title"}
     if autor:
         q["author"] = autor.split(",")[0]
     status, body, _ = _get("https://openlibrary.org/search.json?" + urllib.parse.urlencode(q), accept="application/json")
     if status != 200:
         return None, f"Open Library HTTP {status}"
+    t = _norm(titel)
     for d in json.loads(body or b"{}").get("docs") or []:
-        if d.get("cover_i"):
+        n = _norm(d.get("title", ""))
+        if d.get("cover_i") and t and (t[:12] in n or n[:12] in t):
             return f"https://covers.openlibrary.org/b/id/{d['cover_i']}-L.jpg", None
     return None, None
 
@@ -130,8 +131,8 @@ def bild_laden(url: str) -> bytes | None:
 def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
     """Sucht ein Cover. Ergebnis: {bild: bytes|None, quelle, fehler: [..]}"""
     fehler: list[str] = []
+    # Kitapyurdu antwortet automatischen Abfragen mit HTTP 403 (gesperrt); deshalb nicht mehr abgefragt.
     for name, f in (
-        ("Kitapyurdu", lambda: kitapyurdu(titel, autor)),
         ("Google Books", lambda: google(titel, autor, isbn, google_key)),
         ("Open Library", lambda: openlibrary(titel, autor, isbn)),
     ):
