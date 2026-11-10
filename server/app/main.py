@@ -40,7 +40,7 @@ BILDTYPEN = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "i
 
 
 def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None, kapak_suche=None,
-                 yazar_suche=None, yazar_bild=None, isbn_suche=None) -> FastAPI:
+                 yazar_suche=None, yazar_bild=None, isbn_suche=None, isbn_finder=None) -> FastAPI:
     env = dict(os.environ) if env is None else env
     data = Path(data_dir or env.get("DATA_DIR") or "/data")
     web = Path(web_dir or env.get("WEB_DIR") or Path(__file__).resolve().parents[2]).resolve()
@@ -70,6 +70,7 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
     yazar_suche = yazar_suche or kp.vikipedi
     yazar_bild = yazar_bild or kp.yazar_bild
     isbn_suche = isbn_suche or kp.isbn_bilgi
+    isbn_finder = isbn_finder or kp.isbn_finden
 
     app = FastAPI(title="Kitaplığım", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -226,6 +227,22 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
             raise HTTPException(400, "Geçersiz ISBN.")
         info, fehler = await run_in_threadpool(isbn_suche, isbn, google_key)
         return no_store({"info": info, "fehler": fehler})
+
+    @app.post("/api/isbn-bul")
+    async def isbn_bul(request: Request, _a: bool = Depends(angemeldet)):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        titel = str(body.get("title") or "").strip()[:200]
+        if not titel:
+            raise HTTPException(400, "Kitap adı gerekli.")
+        try:
+            isbn, err = await run_in_threadpool(isbn_finder, titel, str(body.get("author") or "")[:200],
+                                                str(body.get("publisher") or "")[:200], google_key)
+        except Exception as e:
+            isbn, err = None, f"Google Books: {type(e).__name__}"
+        return no_store({"isbn": isbn, "fehler": err})
 
     # ---------------------------------------------------------------- Autoren-Kurzbiografie
 

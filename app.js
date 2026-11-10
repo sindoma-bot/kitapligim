@@ -1011,6 +1011,12 @@ function openSettings(){
         <button class="btn" id="fillMissing" style="justify-self:start" ${noCover||needInfo?"":"disabled"}>Eksikleri internetten bul</button>
         <div id="fillProg" hidden><div class="progress"><i></i></div><span class="meta" id="fillText"></span></div>
       </div>
+      ${Sync.enabled?`<div class="section">
+        <h3>Eksik ISBN'leri bul</h3>
+        <p class="meta" style="margin:0">${all.filter(b=>!b.isbn).length} kitabın ISBN'i yok. NAS, Google Books'ta kitap adı, yazar ve yayınevine göre arar; yalnızca ad ve yayınevi uyuşursa ISBN eklenir. Günlük sorgu hakkı dolarsa durur, sonra kaldığı yerden devam eder.</p>
+        <button class="btn" id="findIsbn" style="justify-self:start" ${all.some(b=>!b.isbn)?"":"disabled"}>Eksik ISBN'leri bul</button>
+        <div id="isbnProg" hidden><div class="progress"><i></i></div><span class="meta" id="isbnText"></span></div>
+      </div>`:""}
       <div class="section">
         <h3>CSV içe aktar</h3>
         <p class="meta" style="margin:0">Excel, Google E-Tablolar veya Kitapyurdu'dan aldığın listeyi yükle. İlk satırda “Kitap adı”, “Yazar”, “Yayınevi”, “ISBN”, “Raf”, “Not” gibi sütun adları varsa otomatik eşleşir. Raf sütunundaki adlar için raflar kendiliğinden oluşur. Aynı kitap ikinci kez eklenmez.</p>
@@ -1044,6 +1050,7 @@ function openSettings(){
   sh.querySelector("#doBackup").addEventListener("click", exportBackup);
   sh.querySelector("#doRestore").addEventListener("click", ()=>$("#jsonInput").click());
   sh.querySelector("#fillMissing").addEventListener("click", e=>fillMissing(e.currentTarget, sh));
+  sh.querySelector("#findIsbn")?.addEventListener("click", e=>findIsbns(e.currentTarget, sh));
   const se = sh.querySelector("#shelfEdits");
   const sl = shelfList();
   se.innerHTML = sl.length ? sl.map(s=>`<div class="shelfedit" data-sid="${esc(s.id)}"><input value="${esc(s.name)}" aria-label="Raf adı"><button class="btn" data-ren>Kaydet</button><button class="btn danger" data-del>Sil</button></div>`).join("") : `<span class="meta">Henüz raf yok.</span>`;
@@ -1054,6 +1061,33 @@ function openSettings(){
   });
 }
 
+async function findIsbns(btn, sh){
+  btn.disabled = true;
+  const prog = sh.querySelector("#isbnProg"); prog.hidden = false;
+  const bar = prog.querySelector("i"), txt = sh.querySelector("#isbnText");
+  // Bücher, die schon einmal ohne Treffer gesucht wurden, kommen zuletzt
+  const todo = [...books.values()].filter(b=>!b.isbn && b.title && !b.title.startsWith("ISBN ")).sort((a,b)=>(a.isbnTried||0)-(b.isbnTried||0));
+  let found = 0, i = 0, fails = 0;
+  for (const b of todo){
+    if (!document.body.contains(btn)) break;
+    i++; bar.style.width = (100*i/todo.length)+"%";
+    txt.textContent = `${i} / ${todo.length} · ${found} ISBN bulundu`;
+    let r;
+    try {
+      const res = await fetch("api/isbn-bul", {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({title:b.title, author:firstAuthor(b.author), publisher:b.publisher||""})});
+      if (res.status === 401) { showLogin(); txt.textContent = "Durdu: NAS girişi gerekli"; break; }
+      r = await res.json();
+    } catch { if (++fails >= 5) { txt.textContent = "Durdu: NAS'a ulaşılamıyor"; break; } continue; }
+    fails = 0;
+    if (r.fehler && r.fehler.includes("429")) { txt.textContent = `Durdu: Google'ın günlük sorgu hakkı doldu. ${found} ISBN bulundu. Yarın sabah 9'dan sonra tekrar bas, kaldığı yerden devam eder.`; btn.disabled = false; return; }
+    const cur = books.get(b.id); if (!cur) continue;
+    if (r.isbn && ![...books.values()].some(x=>x.isbn===r.isbn)) { await saveBook({...cur, isbn: r.isbn, updatedAt: Date.now()}); found++; }
+    else if (!r.fehler) await saveBook({...cur, isbnTried: Date.now(), updatedAt: Date.now()});
+  }
+  if (i === todo.length) txt.textContent = `Bitti: ${found} ISBN bulundu, ${todo.length-found} kitapta uygun kayıt yok.`;
+  btn.disabled = false;
+}
 async function fillMissing(btn, sh){
   btn.disabled = true;
   const prog = sh.querySelector("#fillProg"); prog.hidden = false;

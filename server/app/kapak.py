@@ -324,3 +324,45 @@ def isbn_bilgi(isbn: str, google_key: str = "") -> tuple[dict | None, list[str]]
     out.update({k: v for k, v in (g or {}).items() if v})
     out["isbn"] = isbn
     return out, fehler
+
+
+_VERLAG_FUELL = {"yayinlari", "yayınları", "yayinevi", "yayınevi", "yayincilik", "yayıncılık", "yayin", "yayın", "kitap", "kitapları",
+                 "kitaplari", "ltd", "sti", "şti", "as", "a", "ş", "s", "ve", "tic", "san", "basim", "basım", "dagitim", "dağıtım", "publishing", "press"}
+
+
+def _verlag_teile(v: str) -> set[str]:
+    return {t for t in _norm(v).split() if t not in _VERLAG_FUELL and len(t) > 1}
+
+
+def isbn_finden(titel: str, autor: str, verlag: str, google_key: str = "") -> tuple[str | None, str | None]:
+    """Sucht die ISBN zu Titel/Autor/Verlag in Google Books. Gibt (ISBN, Fehler) zurück.
+    Übernommen wird nur ein Treffer mit passendem Titel und – falls bekannt – passendem Verlag."""
+    t = _norm(titel)
+    if not t:
+        return None, None
+    nachname = (_norm(autor.split(",")[0]).split() or [""])[-1] if autor else ""
+    q = f'intitle:"{titel}"' + (f" inauthor:{nachname}" if nachname else "")
+    url = "https://www.googleapis.com/books/v1/volumes?maxResults=10&printType=books&q=" + urllib.parse.quote(q)
+    if google_key:
+        url += "&key=" + urllib.parse.quote(google_key)
+    status, body, _ = _get(url, accept="application/json")
+    if status != 200:
+        return None, f"Google Books HTTP {status}"
+    vt = _verlag_teile(verlag)
+    for item in json.loads(body or b"{}").get("items") or []:
+        v = item.get("volumeInfo") or {}
+        ids = {i.get("type"): i.get("identifier") for i in v.get("industryIdentifiers") or []}
+        isbn = ids.get("ISBN_13") or ids.get("ISBN_10")
+        if not isbn:
+            continue
+        gt = _norm(v.get("title", ""))
+        gts = _norm(" ".join(x for x in (v.get("title"), v.get("subtitle")) if x))
+        if not (t in (gt, gts) or (len(min(t, gt, key=len)) >= 6 and (gt.startswith(t) or t.startswith(gt)))):
+            continue
+        if vt:
+            if not (vt & _verlag_teile(v.get("publisher") or "")):
+                continue
+        elif nachname and not any(nachname in _norm(a).split() for a in v.get("authors") or []):
+            continue
+        return isbn, None
+    return None, None

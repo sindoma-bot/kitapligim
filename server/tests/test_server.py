@@ -258,3 +258,20 @@ def test_isbn_lookup(tmp_path, web, monkeypatch):
     assert r["info"]["author"] == "Murat Bardakçı" and r["info"]["year"] == "2023" and r["info"]["language"] == "Türkçe"
     assert r["fehler"] == ["Open Library HTTP 404"]
     assert c.get("/api/isbn?isbn=12").status_code == 400
+
+
+def test_isbn_finden(monkeypatch):
+    import json as _j
+    from app import kapak
+    items = {"items": [
+        {"volumeInfo": {"title": "04:00", "publisher": "Doğan Kitap", "authors": ["Hikmet Hükümenoğlu"],
+                        "industryIdentifiers": [{"type": "ISBN_13", "identifier": "9786050900000"}]}},
+        {"volumeInfo": {"title": "04:00", "subtitle": "Roman", "publisher": "Can Yayınları", "authors": ["Hikmet Hükümenoğlu"],
+                        "industryIdentifiers": [{"type": "ISBN_10", "identifier": "9750700000"}, {"type": "ISBN_13", "identifier": "9789750700001"}]}}]}
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (200, _j.dumps(items).encode(), ""))
+    assert kapak.isbn_finden("04:00", "Hikmet Hükümenoğlu", "CAN YAYINLARI") == ("9789750700001", None)
+    assert kapak.isbn_finden("04:00", "Hikmet Hükümenoğlu", "İletişim Yayınları") == (None, None)
+    assert kapak.isbn_finden("Başka Kitap", "Hikmet Hükümenoğlu", "") == (None, None)
+    assert kapak.isbn_finden("04:00", "Hikmet Hükümenoğlu", "")[0] == "9786050900000"
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (429, b"", ""))
+    assert kapak.isbn_finden("04:00", "", "") == (None, "Google Books HTTP 429")
