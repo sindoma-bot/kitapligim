@@ -376,10 +376,10 @@ async function bulkShelf(add){
 
 /* ---------- sheets ---------- */
 let onSheetClose = null;
-function openSheet(html, onClose){
+function openSheet(html, onClose, cls=""){
   closeSheet();
   const root = $("#sheetRoot");
-  root.innerHTML = `<div class="scrim"><div class="sheet" role="dialog" aria-modal="true"><div class="wrap"><div class="grab"></div>${html}</div></div></div>`;
+  root.innerHTML = `<div class="scrim"><div class="sheet ${cls}" role="dialog" aria-modal="true"><div class="wrap">${cls?"":`<div class="grab"></div>`}${html}</div></div></div>`;
   const scrim = root.firstChild;
   scrim.addEventListener("click", e=>{ if(e.target===scrim) closeSheet(); });
   document.addEventListener("keydown", escClose);
@@ -488,7 +488,7 @@ function openDetail(id){
   const b = books.get(id); if (!b) return;
   const künye = [["Yayınevi",b.publisher],["Yayın yılı",b.year],["Dil",b.language],["Sayfa sayısı",b.pages],["Çevirmen",b.translator],["ISBN",b.isbn]].filter(([,v])=>v);
   const raf = (b.shelves||[]).map(sid=>shelves.get(sid)?.name).filter(Boolean);
-  const sh = openSheet(`<div class="sheethead"><span></span><button class="iconbtn" data-close aria-label="Kapat">✕</button></div>
+  const sh = openSheet(`<div class="pagehead"><button class="back" data-close aria-label="Geri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span class="pt">${esc(b.title||"Adsız")}</span><span></span></div>
     <div class="detail">
       <div class="dhead"><h2>${esc(b.title||"Adsız")}</h2>
         ${b.author?`<div class="dauthor">${esc(b.author)}</div>`:""}${b.publisher?`<div class="dpub">${esc(b.publisher)}</div>`:""}</div>
@@ -510,8 +510,16 @@ function openDetail(id){
         ${b.addedAt?`<dt>Eklenme</dt><dd>${new Date(b.addedAt).toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})}</dd>`:""}
       </dl></section>
       <div class="foot"><span></span><button type="button" class="btn primary" id="dEdit">Düzenle</button></div>
-    </div>`);
+    </div>`, null, "page");
   hydratePhotos(sh);
+  // vom linken Rand nach rechts wischen = zurück (wie in iOS)
+  let sx = null, sy = 0;
+  sh.addEventListener("touchstart", e=>{ const t=e.touches[0]; sx = t.clientX < 30 ? t.clientX : null; sy = t.clientY; }, {passive:true});
+  sh.addEventListener("touchmove", e=>{ if (sx===null) return; const t=e.touches[0], dx=t.clientX-sx;
+    if (Math.abs(t.clientY-sy) > 60) { sx=null; sh.style.transform=""; return; }
+    if (dx > 0) sh.style.transform = `translateX(${dx}px)`; }, {passive:true});
+  sh.addEventListener("touchend", e=>{ if (sx===null) return; const dx=e.changedTouches[0].clientX-sx; sx=null;
+    if (dx > 90) closeSheet(); else sh.style.transform=""; });
   const cur = () => books.get(id) || b;
   const update = async patch => { const nb = {...cur(), ...patch, updatedAt: Date.now()}; await saveBook(nb); return nb; };
   sh.querySelector(".dstatus").addEventListener("click", async e=>{
