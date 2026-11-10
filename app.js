@@ -533,19 +533,24 @@ const ICON_ST = {
   reading:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13c-3-.5-6 0-8 1.5zM12 6v13"/></svg>',
   read:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>'};
 const ST_VERB = {unread:"Okuyacağım", reading:"Okuyorum", read:"Okudum"};
+const BACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 function openDetail(id){
   const b = books.get(id); if (!b) return;
   const künye = [["Yayınevi",b.publisher],["Yayın yılı",b.year],["Dil",b.language],["Sayfa sayısı",b.pages],["Çevirmen",b.translator],["ISBN",b.isbn]].filter(([,v])=>v);
   const raf = (b.shelves||[]).map(sid=>shelves.get(sid)?.name).filter(Boolean);
-  const sh = openSheet(`<div class="pagehead"><button class="back" data-close aria-label="Geri"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button><span class="pt">${esc(b.title||"Adsız")}</span><span></span></div>
+  const sh = openSheet(`<div class="pagehead"><button class="back" data-close aria-label="Geri">${BACK_ICON}</button><span class="pt">${esc(b.title||"Adsız")}</span><span class="pa"><button type="button" class="barbtn" id="dEdit">Düzenle</button></span></div>
     <div class="detail">
-      <div class="dhead"><h2>${esc(b.title||"Adsız")}</h2>
-        ${b.author?`<div class="dauthor">${esc(b.author)}</div>`:""}${b.publisher?`<div class="dpub">${esc(b.publisher)}</div>`:""}</div>
-      <button type="button" class="dcover" id="dZoom" aria-label="Kapağı büyüt">${coverHTML(b)}</button>
-      <div class="dstatus" role="group" aria-label="Okuma durumu">
-        ${Object.keys(ST_VERB).map(k=>`<button type="button" data-st="${k}" aria-pressed="${(b.status||"unread")===k}">${ICON_ST[k]}<span>${ST_VERB[k]}</span></button>`).join("")}
+      <div class="dtop">
+        <button type="button" class="dcover" id="dZoom" aria-label="Kapağı büyüt">${coverHTML(b)}</button>
+        <div class="dside">
+          <div class="dhead"><h2>${esc(b.title||"Adsız")}</h2>
+            ${b.author?`<div class="dauthor">${esc(b.author)}</div>`:""}${b.publisher?`<div class="dpub">${esc(b.publisher)}</div>`:""}</div>
+          <div class="dstatus" role="group" aria-label="Okuma durumu">
+            ${Object.keys(ST_VERB).map(k=>`<button type="button" data-st="${k}" aria-pressed="${(b.status||"unread")===k}">${ICON_ST[k]}<span>${ST_VERB[k]}</span></button>`).join("")}
+          </div>
+          <div class="dstars" id="dStars" aria-label="Puan"></div>
+        </div>
       </div>
-      <div class="dstars" id="dStars" aria-label="Puan"></div>
       <section class="dsec"><h3>Notum</h3>
         <div id="dNoteView">${b.note?`<p class="dnote">${esc(b.note)}</p>`:""}<button type="button" class="btn" id="dNoteEdit">${b.note?"Notu düzenle":"Not ekle"}</button></div>
         <div id="dNoteForm" hidden><textarea id="dNote" rows="5" placeholder="Altını çizdiğin yerler, düşüncelerin, nereden aldığın…">${esc(b.note)}</textarea>
@@ -558,7 +563,6 @@ function openDetail(id){
         ${b.loanTo?`<dt>Ödünç</dt><dd>${esc(b.loanTo)}${b.loanDate?` · ${esc(new Date(b.loanDate).toLocaleDateString("tr-TR"))}`:""}</dd>`:""}
         ${b.addedAt?`<dt>Eklenme</dt><dd>${new Date(b.addedAt).toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})}</dd>`:""}
       </dl></section>
-      <div class="foot"><span></span><button type="button" class="btn primary" id="dEdit">Düzenle</button></div>
     </div>`, null, "page");
   hydratePhotos(sh);
   // vom linken Rand nach rechts wischen = zurück (wie in iOS)
@@ -592,7 +596,7 @@ function openDetail(id){
   const ab = sh.querySelector("#dAbout"), more = sh.querySelector("#dMore");
   if (ab) requestAnimationFrame(()=>{ if (ab.scrollHeight > ab.clientHeight + 4) more.hidden = false; });
   if (more) more.addEventListener("click", ()=>{ const open = ab.classList.toggle("clamp"); more.textContent = open ? "Devamını oku ↓" : "Daha az göster ↑"; });
-  sh.querySelector("#dEdit").addEventListener("click", ()=>openBook(id));
+  sh.querySelector("#dEdit").addEventListener("click", ()=>openBook(id, null, true));
   sh.querySelector("#dZoom").addEventListener("click", ()=>{
     const img = sh.querySelector(".dcover img:not([hidden])");
     if (!img || !img.src) return;
@@ -603,13 +607,14 @@ function openDetail(id){
 
 /* ---------- book form ---------- */
 let pendingPhoto = null; // {blob, url}
-function openBook(id, prefill){
+function openBook(id, prefill, fromDetail){
   if (id && !books.has(id)) return;
   const b = id ? {...books.get(id)} : {status:"unread", shelves: (!["all","none","loan"].includes(ui.shelf))?[ui.shelf]:[], ...(prefill||{})};
   pendingPhoto = null;
   let rating = b.rating||0;
   const sl = shelfList();
-  const sh = openSheet(`${head(id?"Kitabı düzenle":"Yeni kitap")}
+  const sh = openSheet(`<div class="pagehead"><button type="button" class="back" id="fBack" aria-label="${fromDetail?"Geri":"Kapat"}">${BACK_ICON}</button><span class="pt">${id?"Kitabı düzenle":"Yeni kitap"}</span>
+      <span class="pa">${id?`<button type="button" class="barbtn ghost" id="delBook">Sil</button>`:""}<button type="submit" form="bookForm" class="barbtn" id="saveBook">${id?"Kaydet":"Ekle"}</button></span></div>
     <form class="form" id="bookForm" novalidate>
       <div class="lookup">
         <label class="f">ISBN<input id="f_isbn" inputmode="numeric" value="${esc(b.isbn)}" autocomplete="off" placeholder="978…"></label>
@@ -666,11 +671,9 @@ function openBook(id, prefill){
         <label class="f" style="margin-top:6px"><span class="sr">Hakkında</span><textarea id="f_about" placeholder="Arka kapak yazısı">${esc(b.about)}</textarea></label>
       </details>
       ${b.addedAt?`<span class="meta">Eklenme: ${new Date(b.addedAt).toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})}${b.sample?" · örnek kayıt":""}</span>`:""}
-      <div class="foot">
-        ${id?`<button type="button" class="btn danger" id="delBook">Kitabı sil</button>`:"<span></span>"}
-        <button type="submit" class="btn primary" id="saveBook">${id?"Kaydet":"Kitaplığa ekle"}</button>
-      </div>
-    </form>`, ()=>{ if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null; });
+    </form>`, ()=>{ if (pendingPhoto) URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null; }, "page");
+  const leave = () => { closeSheet(); if (fromDetail && books.has(id)) openDetail(id); };
+  sh.querySelector("#fBack").addEventListener("click", leave);
   hydratePhotos(sh);
   const f = k => sh.querySelector("#f_"+k);
   const preview = () => { sh.querySelector("#pv").innerHTML = pendingPhoto ? `<div class="cover"><img src="${pendingPhoto.url}" alt=""></div>` : coverHTML({...b, title:f("title").value, author:f("author").value}); hydratePhotos(sh); };
@@ -759,7 +762,7 @@ function openBook(id, prefill){
       shelves:[...sh.querySelectorAll("#shelfpick input:checked")].map(i=>i.value),
       loanTo:v("loanTo"), loanDate:v("loanDate"), note:f("note").value, language:v("language"), about:f("about").value};
   }
-  if (id) armable(sh.querySelector("#delBook"), "Kitabı sil", "Emin misin? Sil", async ()=>{ await deleteBooks([id]); closeSheet(); toast("Kitap silindi"); });
+  if (id) armable(sh.querySelector("#delBook"), "Sil", "Emin misin?", async ()=>{ await deleteBooks([id]); closeSheet(); toast("Kitap silindi"); });
   sh.querySelector("#bookForm").addEventListener("submit", async e=>{
     e.preventDefault();
     const d = collect();
@@ -778,7 +781,7 @@ function openBook(id, prefill){
         addedAt: b.addedAt || Date.now(), sample: false};
       if (photoUp) book._photoUp = 1;
       await saveBook(book);
-      closeSheet(); toast(id?"Kaydedildi":"Kitaplığa eklendi");
+      leave(); toast(id?"Kaydedildi":"Kitaplığa eklendi");
     }catch(err){ toast("Kaydedilemedi: telefonda yer kalmamış olabilir."); }
   });
   if (!id && !prefill) setTimeout(()=>f("isbn").focus(), 60);
