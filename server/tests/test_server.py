@@ -1,0 +1,122 @@
+import hashlib
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app.main import erstelle_app
+
+PW = "kitap123"
+
+
+@pytest.fixture
+def web(tmp_path):
+    w = tmp_path / "web"
+    w.mkdir()
+    (w / "index.html").write_text("<title>Kitaplığım</title>", encoding="utf-8")
+    (w / "app.js").write_text("// app", encoding="utf-8")
+    return w
+
+
+@pytest.fixture
+def client(tmp_path, web):
+    app = erstelle_app(str(tmp_path / "data"), str(web), {"PW_HASH": hashlib.sha256(PW.encode()).hexdigest()})
+    return TestClient(app)
+
+
+def login(c):
+    r = c.post("/api/anmelden", json={"passwort": PW})
+    assert r.status_code == 200, r.text
+
+
+def book(id, t, **kw):
+    return {"id": id, "title": "Kitap " + id, "updatedAt": t, **kw}
+
+
+def test_requires_login(client):
+    assert client.get("/api/sync").status_code == 401
+    assert client.post("/api/sync", json={}).status_code == 401
+    assert client.get("/api/gesundheit").json()["app"] == "kitapligim"
+
+
+def test_wrong_password_and_lockout(client):
+    for _ in range(8):
+        assert client.post("/api/anmelden", json={"passwort": "yanlis"}).status_code == 401
+    assert client.post("/api/anmelden", json={"passwort": PW}).status_code == 429
+
+
+def test_sync_roundtrip_and_incremental(client):
+    login(client)
+    r = client.post("/api/sync?seit=0", json={"books": [book("a", 1), book("b", 1)], "shelves": [{"id": "s1", "name": "Roman", "updatedAt": 1}]})
+    d = r.json()
+    assert {b["id"] for b in d["books"]} == {"a", "b"} and d["shelves"][0]["name"] == "Roman"
+    rev = d["rev"]
+    # nothing new
+    d2 = client.get(f"/api/sync?seit={rev}").json()
+    assert d2["books"] == [] and d2["rev"] == rev and not d2["voll"]
+    # update one
+    client.post(f"/api/sync?seit={rev}", json={"books": [book("a", 2, note="not")]})
+    d3 = client.get(f"/api/sync?seit={rev}").json()
+    assert [b["id"] for b in d3["books"]] == ["a"] and d3["books"][0]["note"] == "not"
+
+
+def test_last_writer_wins_and_tombstones(client):
+    login(client)
+    client.post("/api/sync", json={"books": [book("a", 10, note="yeni")]})
+    client.post("/api/sync", json={"books": [book("a", 5, note="eski")]})  # older edit from offline device
+    d = client.get("/api/sync").json()
+    assert d["books"][0]["note"] == "yeni"
+    client.post("/api/sync", json={"books": [{"id": "a", "deleted": True, "updatedAt": 11}]})
+    d = client.get("/api/sync").json()
+    assert d["books"] == [{"id": "a", "deleted": True, "updatedAt": 11}]
+    assert client.get("/api/ich").json()["anzahl"] == {}
+
+
+def test_private_fields_not_stored(client):
+    login(client)
+    client.post("/api/sync", json={"books": [book("a", 1, _dirty=True)]})
+    assert "_dirty" not in client.get("/api/sync").json()["books"][0]
+
+
+def test_full_resync_when_device_is_ahead(client):
+    login(client)
+    client.post("/api/sync", json={"books": [book("a", 1)]})
+    d = client.get("/api/sync?seit=999").json()
+    assert d["voll"] and [b["id"] for b in d["books"]] == ["a"]
+
+
+def test_bad_payload(client):
+    login(client)
+    assert client.post("/api/sync", json={"books": "x"}).status_code == 400
+    assert client.post("/api/sync", content=b"nope", headers={"content-type": "application/json"}).status_code == 400
+
+
+def test_photos(client):
+    login(client)
+    jpg = b"\xff\xd8\xff\xe0" + b"0" * 100
+    assert client.put("/api/fotos/foto-123456", content=jpg).status_code == 201
+    r = client.get("/api/fotos/foto-123456")
+    assert r.status_code == 200 and r.content == jpg and r.headers["content-type"] == "image/jpeg"
+    assert client.put("/api/fotos/foto-123456", content=b"<html>").status_code == 400
+    assert client.get("/api/fotos/..%2F..%2Fetc").status_code in (400, 404)
+    assert client.get("/api/fotos/nicht-da-123").status_code == 404
+    client.post("/api/sync", json={"books": [book("a", 1, photoId="foto-123456")]})
+    assert client.delete("/api/fotos/foto-123456").status_code == 409
+
+
+def test_static_files(client):
+    assert "Kitaplığım" in client.get("/").text
+    assert client.get("/app.js").text == "// app"
+    assert "Kitaplığım" in client.get("/irgendwas").text  # fallback to index
+    assert client.get("/api/yok").status_code == 404
+
+
+def test_logout(client):
+    login(client)
+    assert client.get("/api/ich").status_code == 200
+    client.post("/api/abmelden")
+    assert client.get("/api/ich").status_code == 401
+
+
+def test_backup_created(tmp_path, web):
+    erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": "x"})
+    assert list((tmp_path / "d" / "sicherung").glob("kitapligim-*.db"))

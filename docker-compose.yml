@@ -1,0 +1,20 @@
+# Container Manager auf der Synology: Projekt → Erstellen → diesen Ordner wählen.
+# Anleitung: docs/synology.md
+services:
+  kitapligim:
+    # Fertiges Paket von GitHub (ghcr.io). Neue Versionen spielt der Watchtower der Automaten Kassierung
+    # (automaten-kassierung-updater) selbst ein, weil dieser Container das Label unten trägt.
+    # Gibt es das Paket auf der NAS noch nicht, baut "Erstellen" es einmal aus diesem Ordner.
+    image: ghcr.io/sindoma-bot/kitapligim:latest
+    build: .
+    container_name: kitapligim
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    volumes:
+      # Datenbank (Bücher, Regale), Cover-Fotos und tägliche Sicherungen; wird mit Hyper Backup gesichert
+      - /volume1/docker/kitapligim/data:/data
+    env_file:
+      - kitapligim.env
+    labels:
+      com.centurylinklabs.watchtower.enable: "true"

@@ -17,21 +17,159 @@ const ui = {shelf:"all", status:"all", q:"", sort:"title", select:false, selecte
 try { const s = JSON.parse(localStorage.getItem("kitaplik-ui") || "{}"); if (s.sort) ui.sort = s.sort; } catch {}
 $("#sortSel").value = ui.sort;
 
-/* ---------- data ops ---------- */
-async function saveBook(b){ b.updatedAt = Date.now(); await Store.put("books", b); books.set(b.id, b); render(); }
+/* ---------- sync with the NAS ----------
+   Only active when the app is served by its own server (Synology). On GitHub Pages it stays local. */
+const Sync = (() => {
+  const st = {enabled:false, busy:false, again:false, timer:null, lastOk:0, state:"local", needLogin:false};
+  let rev = 0; try { rev = +localStorage.getItem("kitaplik-rev") || 0; } catch {}
+  const setRev = r => { rev = r; try { localStorage.setItem("kitaplik-rev", String(r)); } catch {} };
+  const setState = s => { st.state = s; render(); };
+
+  async function api(path, opts={}){
+    const ctl = new AbortController(); const t = setTimeout(()=>ctl.abort(), opts.timeout || 20000);
+    try { return await fetch(path, {credentials:"same-origin", cache:"no-store", ...opts, signal:ctl.signal}); }
+    finally { clearTimeout(t); }
+  }
+
+  async function detect(){
+    let remembered = false; try { remembered = localStorage.getItem("kitaplik-server")==="1"; } catch {}
+    try {
+      const r = await api("api/gesundheit", {timeout: remembered ? 4000 : 2500});
+      const j = r.ok ? await r.json() : null;
+      st.enabled = !!(j && j.app === "kitapligim");
+      if (st.enabled) try { localStorage.setItem("kitaplik-server","1"); } catch {}
+    } catch { st.enabled = remembered; }
+    return st.enabled;
+  }
+
+  async function uploadPhotos(){
+    for (const b of [...books.values()].filter(b=>b._photoUp && b.photoId)) {
+      const blob = await Store.getPhoto(b.photoId);
+      if (blob) {
+        const r = await api(`api/fotos/${encodeURIComponent(b.photoId)}`, {method:"PUT", body:blob, headers:{"Content-Type": blob.type || "image/jpeg"}});
+        if (r.status === 401) throw Object.assign(new Error("login"), {login:true});
+        if (!r.ok) continue;
+      }
+      const cur = books.get(b.id); if (!cur) continue;
+      delete cur._photoUp; await Store.put("books", cur);
+    }
+  }
+
+  async function apply(kind, incoming, full){
+    const map = kind==="books" ? books : shelves;
+    const seen = new Set(), puts = [], dels = [];
+    for (const inc of incoming) {
+      seen.add(inc.id);
+      const local = map.get(inc.id) || tombs[kind].get(inc.id);
+      if (local && local._dirty && (local.updatedAt||0) > (inc.updatedAt||0)) continue; // newer local edit still waiting
+      if (inc.deleted) { dels.push(inc.id); map.delete(inc.id); tombs[kind].delete(inc.id); }
+      else { const r = {...inc}; if (local && local._photoUp && local.photoId === r.photoId) r._photoUp = 1; puts.push(r); map.set(r.id, r); tombs[kind].delete(r.id); }
+    }
+    if (full) for (const [id, r] of [...map]) if (!seen.has(id) && !r._dirty) { map.delete(id); dels.push(id); }
+    if (puts.length) await Store.putMany(kind, puts);
+    if (dels.length) await Store.delMany(kind, dels);
+  }
+
+  async function run(){
+    if (!st.enabled) return;
+    if (st.busy) { st.again = true; return; }
+    st.busy = true; clearTimeout(st.timer);
+    try {
+      await uploadPhotos();
+      const dirty = k => [...(k==="books"?books:shelves).values(), ...tombs[k].values()].filter(r=>r._dirty);
+      const body = {books: dirty("books"), shelves: dirty("shelves")};
+      const r = await api(`api/sync?seit=${rev}`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body), timeout: 60000});
+      if (r.status === 401) { st.needLogin = true; setState("login"); showLogin(); return; }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const d = await r.json();
+      await apply("shelves", d.shelves || [], d.voll);
+      await apply("books", d.books || [], d.voll);
+      setRev(d.rev || 0);
+      st.needLogin = false; st.lastOk = Date.now(); setState("ok");
+    } catch (e) {
+      if (e && e.login) { st.needLogin = true; setState("login"); showLogin(); }
+      else setState("offline");
+    } finally {
+      st.busy = false;
+      if (st.again) { st.again = false; soon(300); }
+    }
+  }
+  function soon(ms = 1500){ if (!st.enabled || st.needLogin) return; clearTimeout(st.timer); st.timer = setTimeout(run, ms); }
+
+  async function login(passwort){
+    const r = await api("api/anmelden", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({passwort})});
+    let j = {}; try { j = await r.json(); } catch {}
+    if (!r.ok) throw new Error(j.error || "Giriş yapılamadı.");
+    st.needLogin = false; setRev(0); await run();
+  }
+  async function logout(){ try { await api("api/abmelden", {method:"POST"}); } catch {} st.needLogin = true; setState("login"); }
+
+  document.addEventListener("visibilitychange", ()=>{ if (document.visibilityState === "visible") soon(200); });
+  window.addEventListener("online", ()=>soon(200));
+  setInterval(()=>{ if (document.visibilityState === "visible") soon(0); }, 60000);
+
+  return {
+    get enabled(){ return st.enabled; }, get state(){ return st.state; }, get lastOk(){ return st.lastOk; },
+    detect, run, soon, login, logout
+  };
+})();
+
+function showLogin(){
+  if (document.querySelector("#loginForm")) return;
+  const sh = openSheet(`<div class="sheethead"><h2>NAS'a giriş</h2></div>
+    <form class="form" id="loginForm" novalidate>
+      <p class="meta" style="margin:0">Kitaplığın NAS'ta saklanıyor. Bu cihazda bir kez şifreni gir, cihaz bir yıl boyunca hatırlar.</p>
+      <label class="f">Şifre<input id="f_pw" type="password" autocomplete="current-password" enterkeyhint="go"></label>
+      <p class="meta" id="loginErr" style="margin:0;color:var(--danger)" hidden></p>
+      <div class="foot"><button type="button" class="btn" data-close>Şimdilik değil</button><button class="btn primary" type="submit" id="loginBtn">Giriş yap</button></div>
+    </form>`);
+  setTimeout(()=>sh.querySelector("#f_pw").focus(), 60);
+  sh.querySelector("#loginForm").addEventListener("submit", async e=>{
+    e.preventDefault();
+    const btn = sh.querySelector("#loginBtn"), err = sh.querySelector("#loginErr");
+    btn.disabled = true; err.hidden = true;
+    try { await Sync.login(sh.querySelector("#f_pw").value); closeSheet(); toast("Giriş yapıldı, kitaplar eşitleniyor"); }
+    catch (ex) { err.textContent = ex.message || "Giriş yapılamadı."; err.hidden = false; btn.disabled = false; }
+  });
+}
+
+/* ---------- data ops ----------
+   Every change is marked _dirty and stamped with updatedAt; Sync sends it to the NAS when one is present.
+   Deletions are kept as tombstones until the NAS has them (only when syncing). */
+const tombs = {books:new Map(), shelves:new Map()};
+async function putRecords(kind, list, {dirty=true} = {}){
+  const now = Date.now();
+  for (const r of list) if (dirty) { r.updatedAt = Math.max(now, (r.updatedAt||0) + 1); r._dirty = 1; }
+  await Store.putMany(kind, list);
+  const map = kind==="books" ? books : shelves;
+  for (const r of list) map.set(r.id, r);
+  if (dirty) Sync.soon();
+}
+async function removeRecords(kind, ids){
+  const map = kind==="books" ? books : shelves;
+  if (Sync.enabled) {
+    const now = Date.now();
+    const t = ids.map(id => ({id, deleted:true, updatedAt: Math.max(now, (map.get(id)?.updatedAt||0)+1), _dirty:1}));
+    await Store.putMany(kind, t);
+    for (const r of t) tombs[kind].set(r.id, r);
+    Sync.soon();
+  } else await Store.delMany(kind, ids);
+  for (const id of ids) map.delete(id);
+}
+async function saveBook(b){ await putRecords("books", [b]); render(); }
 async function deleteBooks(ids){
   const photos = ids.map(id => books.get(id)?.photoId).filter(Boolean);
-  await Store.delMany("books", ids);
+  await removeRecords("books", ids);
   for (const p of photos) { try { await Store.delPhoto(p); } catch {} dropPhotoUrl(p); }
-  for (const id of ids) { books.delete(id); ui.selected.delete(id); }
+  for (const id of ids) ui.selected.delete(id);
   render();
 }
-async function saveShelf(s){ await Store.put("shelves", s); shelves.set(s.id, s); render(); }
+async function saveShelf(s){ await putRecords("shelves", [s]); render(); }
 async function deleteShelf(id){
-  await Store.del("shelves", id); shelves.delete(id);
+  await removeRecords("shelves", [id]);
   const touched = [];
   for (const b of books.values()) if ((b.shelves||[]).includes(id)) { b.shelves = b.shelves.filter(x => x !== id); touched.push(b); }
-  if (touched.length) await Store.putMany("books", touched);
+  if (touched.length) await putRecords("books", touched);
   render();
 }
 function shelfByName(name, create){
@@ -57,7 +195,12 @@ async function hydratePhotos(root){
     const id = img.dataset.photo;
     let url = photoUrls.get(id);
     if (!url) {
-      try { const blob = await Store.getPhoto(id); if (!blob) continue; url = URL.createObjectURL(blob); photoUrls.set(id, url); } catch { continue; }
+      try {
+        const blob = await Store.getPhoto(id);
+        if (blob) { url = URL.createObjectURL(blob); photoUrls.set(id, url); }
+        else if (Sync.enabled) url = `api/fotos/${encodeURIComponent(id)}`;
+        else continue;
+      } catch { continue; }
     }
     img.src = url; img.hidden = false;
   }
@@ -129,7 +272,8 @@ function render(){
     .map(([k,v])=>`<button class="pill" data-status="${k}" aria-pressed="${ui.status===k}">${v}</button>`).join("");
 
   const read = all.filter(b=>b.status==="read").length;
-  $("#countline").textContent = loaded ? `${all.length} kitap · ${read} okundu` : "Kitaplar yükleniyor…";
+  const syncTxt = !Sync.enabled ? "" : ({ok:" · NAS ile eşit", offline:" · NAS'a ulaşılamıyor, sonra eşitlenecek", login:" · NAS girişi gerekli", local:" · eşitleniyor…"}[Sync.state] || "");
+  $("#countline").textContent = loaded ? `${all.length} kitap · ${read} okundu${syncTxt}` : "Kitaplar yükleniyor…";
   $("#sampleBanner").hidden = !all.some(b=>b.sample);
 
   const view = sorted(all.filter(b=>inShelf(b,ui.shelf) && matches(b)));
@@ -217,7 +361,7 @@ async function bulkShelf(add){
     const s = new Set(b.shelves||[]); add?s.add(sid):s.delete(sid);
     b.shelves=[...s]; b.updatedAt=Date.now(); list.push(b);
   }
-  await Store.putMany("books", list); render();
+  await putRecords("books", list); render();
   toast(add ? `${list.length} kitap “${shelves.get(sid)?.name}” rafına eklendi` : `${list.length} kitap “${shelves.get(sid)?.name}” rafından çıkarıldı`);
 }
 
@@ -370,11 +514,13 @@ function openBook(id, prefill){
     }
     try{
       let photoId = b.photoId||null;
-      if (pendingPhoto){ photoId = Store.newId(); await Store.putPhoto(photoId, pendingPhoto.blob); }
+      let photoUp = false;
+      if (pendingPhoto){ photoId = Store.newId(); await Store.putPhoto(photoId, pendingPhoto.blob); photoUp = true; }
       const old = b._oldPhoto || (pendingPhoto && b.photoId) || null;
       if (old && old !== photoId){ try{ await Store.delPhoto(old); }catch{} dropPhotoUrl(old); }
       const book = {...(id?books.get(id):{}), ...d, id: id || Store.newId(), photoId, coverUrl: photoId ? "" : (b.coverUrl||""),
         addedAt: b.addedAt || Date.now(), sample: false};
+      if (photoUp) book._photoUp = 1;
       await saveBook(book);
       closeSheet(); toast(id?"Kaydedildi":"Kitaplığa eklendi");
     }catch(err){ toast("Kaydedilemedi: telefonda yer kalmamış olabilir."); }
@@ -529,19 +675,26 @@ function openSettings(){
       </div>
       <div class="section">
         <h3>Yedekleme</h3>
-        <p class="meta" style="margin:0">Kitapların bu telefonda saklanıyor. Telefon değişirse ya da Safari verileri silinirse kaybolmasın diye ara sıra tam yedek al ve iCloud Drive'a kaydet. ${lastBackup?`Son yedek: ${lastBackup}.`:"Henüz yedek alınmadı."}</p>
+        <p class="meta" style="margin:0">${Sync.enabled ? "NAS her gün veritabanının bir kopyasını alır. İstersen buradan ayrıca bir dosya yedeği alabilirsin." : "Kitapların bu telefonda saklanıyor. Telefon değişirse ya da Safari verileri silinirse kaybolmasın diye ara sıra tam yedek al ve iCloud Drive'a kaydet."} ${lastBackup?`Son yedek: ${lastBackup}.`:""}</p>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn primary" id="doBackup">Tam yedek al (fotoğraflarla)</button>
           <button class="btn" id="doRestore">Yedekten geri yükle</button>
           <button class="btn" id="doExport">CSV olarak dışa aktar</button>
         </div>
       </div>
+      ${Sync.enabled ? `<div class="section">
+        <h3>NAS</h3>
+        <p class="meta" style="margin:0">Kitapların ve kapak fotoğrafların NAS'ta saklanıyor; iPhone, iPad ve bilgisayar aynı listeyi görür. ${Sync.lastOk ? `Son eşitleme: ${new Date(Sync.lastOk).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"})}.` : ""}</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" id="syncNow">Şimdi eşitle</button><button class="btn" id="logoutBtn">Bu cihazda çıkış yap</button></div>
+      </div>` : ""}
       <div class="section">
         <h3>Telefona kur</h3>
         <p class="meta" style="margin:0">iPhone'da Safari'de bu sayfayı açıp Paylaş düğmesine, sonra “Ana Ekrana Ekle”ye dokun. Uygulama gibi açılır ve internetsiz de çalışır.</p>
       </div>
     </div>`);
   sh.querySelector("#newShelf").addEventListener("click", openShelfSheet);
+  sh.querySelector("#syncNow")?.addEventListener("click", async ()=>{ await Sync.run(); toast(Sync.state==="ok" ? "Eşitlendi" : "NAS'a ulaşılamadı"); });
+  sh.querySelector("#logoutBtn")?.addEventListener("click", async ()=>{ await Sync.logout(); closeSheet(); showLogin(); });
   sh.querySelector("#doImport").addEventListener("click", ()=>$("#csvInput").click());
   sh.querySelector("#doExport").addEventListener("click", exportCsv);
   sh.querySelector("#doBackup").addEventListener("click", exportBackup);
@@ -680,10 +833,8 @@ $("#csvInput").addEventListener("change", async e=>{
       addedAt: isNaN(added) ? Date.now()-i : added, updatedAt:Date.now(), sample:false});
   }
   try {
-    if (newShelves.size) await Store.putMany("shelves", [...newShelves.values()]);
-    await Store.putMany("books", newBooks);
-    for (const s of newShelves.values()) shelves.set(s.id, s);
-    for (const b of newBooks) books.set(b.id, b);
+    if (newShelves.size) await putRecords("shelves", [...newShelves.values()]);
+    await putRecords("books", newBooks);
     render();
     const txt = `${newBooks.length} kitap içe aktarıldı${skipped?`, ${skipped} satır atlandı (boş ya da zaten var)`:""}.`;
     const it = document.querySelector("#impText"); if (it){ document.querySelector("#impProg").hidden=false; document.querySelector("#impProg i").style.width="100%"; it.textContent = txt + (newBooks.length ? " Kapakları bulmak için “Eksikleri internetten bul”a dokun." : ""); }
@@ -696,7 +847,13 @@ const blobToDataUrl = blob => new Promise((res,rej)=>{ const r=new FileReader();
 async function exportBackup(){
   toast("Yedek hazırlanıyor…");
   const photos = {};
-  for (const b of books.values()) if (b.photoId){ try{ const blob = await Store.getPhoto(b.photoId); if (blob) photos[b.photoId] = await blobToDataUrl(blob); }catch{} }
+  for (const b of books.values()) if (b.photoId){
+    try{
+      let blob = await Store.getPhoto(b.photoId);
+      if (!blob && Sync.enabled){ const r = await fetch(`api/fotos/${encodeURIComponent(b.photoId)}`); if (r.ok) blob = await r.blob(); }
+      if (blob) photos[b.photoId] = await blobToDataUrl(blob);
+    }catch{}
+  }
   const data = {app:"kitapligim", version:1, exportedAt:new Date().toISOString(), shelves:[...shelves.values()], books:[...books.values()], photos};
   await offerFile(`kitapligim-yedek-${today()}.json`, new Blob([JSON.stringify(data)],{type:"application/json"}));
   try { localStorage.setItem("kitaplik-backup", String(Date.now())); } catch {}
@@ -707,10 +864,9 @@ $("#jsonInput").addEventListener("change", async e=>{
   if (data.app !== "kitapligim" || !Array.isArray(data.books)) { toast("Bu bir Kitaplığım yedeği değil."); return; }
   try {
     for (const [id, url] of Object.entries(data.photos||{})) { const blob = await (await fetch(url)).blob(); await Store.putPhoto(id, blob); }
-    await Store.putMany("shelves", data.shelves||[]);
-    await Store.putMany("books", data.books);
-    for (const s of data.shelves||[]) shelves.set(s.id, s);
-    for (const b of data.books) books.set(b.id, b);
+    const live = data.books.filter(b=>!b.deleted).map(b=>({...b, _photoUp: b.photoId && data.photos && data.photos[b.photoId] ? 1 : 0}));
+    await putRecords("shelves", (data.shelves||[]).filter(s=>!s.deleted));
+    await putRecords("books", live);
     render(); closeSheet(); toast(`Yedekten ${data.books.length} kitap geri yüklendi`, 3500);
   } catch { toast("Geri yükleme yarıda kaldı: telefonda yer kalmamış olabilir."); }
 });
@@ -746,12 +902,15 @@ function installHint(){
   render();
   try {
     let first = false; try { first = !localStorage.getItem("kitaplik-seeded"); } catch {}
-    let [bs, ss] = await Promise.all([Store.all("books"), Store.all("shelves")]);
-    if (first && !bs.length && !ss.length) { await seedSamples(); [bs, ss] = await Promise.all([Store.all("books"), Store.all("shelves")]); }
+    const [server, loadedAll] = await Promise.all([Sync.detect(), Promise.all([Store.all("books"), Store.all("shelves")])]);
+    let [bs, ss] = loadedAll;
+    if (!server && first && !bs.length && !ss.length) { await seedSamples(); [bs, ss] = await Promise.all([Store.all("books"), Store.all("shelves")]); }
     try { localStorage.setItem("kitaplik-seeded","1"); } catch {}
-    books = new Map(bs.map(b=>[b.id,b])); shelves = new Map(ss.map(s=>[s.id,s]));
+    const split = (list, kind) => { const live = []; for (const r of list) (r.deleted ? tombs[kind].set(r.id, r) : live.push(r)); return new Map(live.map(r=>[r.id,r])); };
+    books = split(bs, "books"); shelves = split(ss, "shelves");
     loaded = true; render();
     Store.persist();
+    if (server) Sync.run();
   } catch {
     loaded = true; render();
     toast("Bu tarayıcı kayıt tutmaya izin vermiyor. Özel sekmede olabilirsin.", 6000);
