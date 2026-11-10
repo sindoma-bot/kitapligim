@@ -240,7 +240,7 @@ function inShelf(b, sid){
 function matches(b){
   if (ui.status!=="all" && (b.status||"unread")!==ui.status) return false;
   if (!ui.q) return true;
-  const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.loanTo,b.year].join(" "));
+  const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.about,b.loanTo,b.year].join(" "));
   return low(ui.q).split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
 }
 function sorted(list){
@@ -443,6 +443,13 @@ function openBook(id, prefill){
         <label class="f">Ödünç tarihi<input id="f_loanDate" type="date" value="${esc(b.loanDate)}"></label>
       </div>
       <label class="f">Notlarım<textarea id="f_note" placeholder="Altını çizdiğin yerler, düşüncelerin, nereden aldığın…">${esc(b.note)}</textarea></label>
+      <div class="row2">
+        <label class="f">Dil<input id="f_language" value="${esc(b.language)}" autocomplete="off" placeholder="Türkçe"></label>
+        <span></span>
+      </div>
+      <details ${b.about?"":"open"}><summary class="meta" style="cursor:pointer;padding-block:4px">Hakkında (kitabın tanıtımı)</summary>
+        <label class="f" style="margin-top:6px"><span class="sr">Hakkında</span><textarea id="f_about" placeholder="Arka kapak yazısı">${esc(b.about)}</textarea></label>
+      </details>
       ${b.addedAt?`<span class="meta">Eklenme: ${new Date(b.addedAt).toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})}${b.sample?" · örnek kayıt":""}</span>`:""}
       <div class="foot">
         ${id?`<button type="button" class="btn danger" id="delBook">Kitabı sil</button>`:"<span></span>"}
@@ -508,7 +515,7 @@ function openBook(id, prefill){
     return {title:v("title"), author:v("author"), publisher:v("publisher"), translator:v("translator"), year:v("year"), pages:v("pages"),
       isbn:Lookup.cleanIsbn(v("isbn")), status:v("status"), rating,
       shelves:[...sh.querySelectorAll("#shelfpick input:checked")].map(i=>i.value),
-      loanTo:v("loanTo"), loanDate:v("loanDate"), note:f("note").value};
+      loanTo:v("loanTo"), loanDate:v("loanDate"), note:f("note").value, language:v("language"), about:f("about").value};
   }
   if (id) armable(sh.querySelector("#delBook"), "Kitabı sil", "Emin misin? Sil", async ()=>{ await deleteBooks([id]); closeSheet(); toast("Kitap silindi"); });
   sh.querySelector("#bookForm").addEventListener("submit", async e=>{
@@ -752,7 +759,7 @@ async function fillMissing(btn, sh){
 }
 
 /* ---------- CSV ---------- */
-const COLS = [["title","Başlık"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["status","Durum"],["rating","Puan"],["shelves","Raflar"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["note","Not"],["addedAt","Eklenme tarihi"]];
+const COLS = [["title","Başlık"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["status","Durum"],["rating","Puan"],["shelves","Raflar"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["note","Notum"],["language","Dil"],["about","Hakkında"],["addedAt","Eklenme tarihi"]];
 const csvCell = v => { v = String(v ?? ""); return /[";\n\r]/.test(v) ? `"${v.replace(/"/g,'""')}"` : v; };
 function buildCsv(){
   const rows = [COLS.map(c=>c[1])];
@@ -801,10 +808,12 @@ const ALIAS = {
   shelves:["raf","raflar","shelf","shelves","kategori","etiket","etiketler"],
   loanTo:["ödünç verilen","ödünç","kime","loaned to"],
   loanDate:["ödünç tarihi"],
-  note:["not","notlar","notlarım","note","notes","açıklama"],
+  note:["not","notlar","notlarım","notum","note","notes"],
+  about:["hakkında","hakkinda","açıklama","tanıtım","özet","description","about"],
+  language:["kitap dili","dil","language"],
   addedAt:["eklenme tarihi","eklenme","date added"]
 };
-const FIELD_LABELS = [["title","Kitap adı"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["shelves","Raf"],["status","Durum"],["rating","Puan"],["note","Not"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["addedAt","Eklenme tarihi"]];
+const FIELD_LABELS = [["title","Kitap adı"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["language","Dil"],["shelves","Raf"],["status","Durum"],["rating","Puan"],["note","Notum"],["about","Hakkında"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["addedAt","Eklenme tarihi"]];
 $("#csvInput").addEventListener("change", async e=>{
   const file = e.target.files[0]; e.target.value=""; if(!file) return;
   let text = await file.text();
@@ -875,7 +884,7 @@ async function importRows(body, map){
     const added = Date.parse(g("addedAt"));
     newBooks.push({id:Store.newId(), title, author:g("author"), publisher:g("publisher"), translator:g("translator"), year:g("year"), pages:g("pages"),
       isbn, status:statusOf(g("status")), rating:Math.max(0,Math.min(5,parseInt(g("rating"))||0)),
-      shelves:sids, loanTo:g("loanTo"), loanDate:g("loanDate"), note:g("note"), photoId:null, coverUrl:"",
+      shelves:sids, loanTo:g("loanTo"), loanDate:g("loanDate"), note:g("note"), about:g("about"), language:g("language"), photoId:null, coverUrl:"",
       addedAt: isNaN(added) ? Date.now()-i : added, updatedAt:Date.now(), sample:false});
   }
   try {
