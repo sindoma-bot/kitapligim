@@ -629,6 +629,13 @@ function openBook(id, prefill, fromDetail){
           <button type="button" class="btn" id="findCover">İnternette kapak ara</button>
           ${(b.photoId||b.coverUrl)?`<button type="button" class="btn" id="rmPhoto">Kapağı kaldır</button>`:""}
         </div>
+        <div class="pmeta">
+          <div class="f" style="display:grid;gap:4px;font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Puan<div class="stars" id="stars"></div></div>
+          <div style="font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Raflar</div>
+          <div class="shelfpick" id="shelfpick">
+            ${sl.map(s=>`<label><input type="checkbox" value="${esc(s.id)}" ${(b.shelves||[]).includes(s.id)?"checked":""}>${esc(s.name)}</label>`).join("") || `<span class="meta">Henüz raf yok. Ana ekrandaki “+ Raf ekle” ile oluşturabilirsin.</span>`}
+          </div>
+        </div>
       </div>
       <div id="coverResults" hidden></div>
       <details id="coverLinkBox"><summary class="meta" style="cursor:pointer;padding-block:2px">Kapağı mağazadan al (Kitapyurdu, idefix, Amazon)</summary>
@@ -652,11 +659,7 @@ function openBook(id, prefill, fromDetail){
       </div>
       <div class="row2">
         <label class="f">Durum<select id="f_status">${Object.entries(STATUS).map(([k,v])=>`<option value="${k}" ${b.status===k?"selected":""}>${v}</option>`).join("")}</select></label>
-        <div class="f" style="display:grid;gap:4px;font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Puan<div class="stars" id="stars"></div></div>
-      </div>
-      <div style="font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Raflar</div>
-      <div class="shelfpick" id="shelfpick">
-        ${sl.map(s=>`<label><input type="checkbox" value="${esc(s.id)}" ${(b.shelves||[]).includes(s.id)?"checked":""}>${esc(s.name)}</label>`).join("") || `<span class="meta">Henüz raf yok. Ana ekrandaki “+ Raf ekle” ile oluşturabilirsin.</span>`}
+        <span></span>
       </div>
       <div class="row2">
         <label class="f">Ödünç verildi (kime)<input id="f_loanTo" value="${esc(b.loanTo)}" placeholder="Boşsa evde" autocomplete="off"></label>

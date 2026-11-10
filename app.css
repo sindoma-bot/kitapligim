@@ -332,3 +332,15 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
 @media (max-width:420px){.dstatus span{font-size:.72rem}}
 .sheet>.wrap{padding-inline:16px}
 .sheet.page{overflow-x:hidden}
+
+/* v4: status stacked; edit form cover | photo buttons | puan + raflar */
+.dstatus{grid-template-columns:1fr;gap:6px;max-width:260px}
+.dstatus button{grid-auto-flow:column;justify-content:start;align-items:center;gap:10px;padding:9px 14px;font-size:.9rem;text-align:left}
+.dstatus svg{width:20px;height:20px}
+.photo{display:grid;grid-template-columns:96px auto minmax(0,1fr);grid-template-areas:"pv pb pm";gap:14px;align-items:start}
+.photo #pv{grid-area:pv}.photo .pbtns{grid-area:pb}.photo .pmeta{grid-area:pm}
+.pmeta{display:grid;gap:8px;align-content:start;min-width:0}
+@media (max-width:640px){
+  .photo{grid-template-columns:96px minmax(0,1fr);grid-template-areas:"pv pm" "pb pb"}
+  .photo .pbtns{display:flex;flex-wrap:wrap;gap:6px}
+}
