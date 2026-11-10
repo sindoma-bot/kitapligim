@@ -13,8 +13,9 @@ let books = new Map();   // id -> book
 let shelves = new Map(); // id -> {id,name,order}
 let loaded = false;
 const photoUrls = new Map(); // photoId -> objectURL
-const ui = {shelf:"all", status:"all", q:"", sort:"title", select:false, selected:new Set()};
-try { const s = JSON.parse(localStorage.getItem("kitaplik-ui") || "{}"); if (s.sort) ui.sort = s.sort; } catch {}
+const ui = {shelf:"all", status:"all", q:"", sort:"title", view:"grid", select:false, selected:new Set()};
+try { const s = JSON.parse(localStorage.getItem("kitaplik-ui") || "{}"); if (s.sort) ui.sort = s.sort; if (s.view) ui.view = s.view; } catch {}
+const saveUi = () => { try { localStorage.setItem("kitaplik-ui", JSON.stringify({sort:ui.sort, view:ui.view})); } catch {} };
 $("#sortSel").value = ui.sort;
 
 /* ---------- sync with the NAS ----------
@@ -239,6 +240,8 @@ function inShelf(b, sid){
 }
 function matches(b){
   if (ui.status==="nocover") { if (b.photoId || b.coverUrl) return false; }
+  else if (ui.status==="fav") { if ((b.rating||0) < 4) return false; }
+  else if (ui.status==="notes") { if (!String(b.note||"").trim()) return false; }
   else if (ui.status!=="all" && (b.status||"unread")!==ui.status) return false;
   if (!ui.q) return true;
   const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.about,b.loanTo,b.year].join(" "));
@@ -256,6 +259,33 @@ function sorted(list){
   return list.sort(by);
 }
 
+const svgI = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const NAVI = {
+  all: svgI('<path d="M3 5.5c2.5-.9 5.6-.7 8 .7v13.3c-2.4-1.3-5.5-1.5-8-.6zM21 5.5c-2.5-.9-5.6-.7-8 .7v13.3c2.4-1.3 5.5-1.5 8-.6z"/>'),
+  unread: svgI('<path d="M6 3h12v18l-6-4-6 4z"/>'),
+  reading: svgI('<path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13c-3-.5-6 0-8 1.5zM12 6v13"/>'),
+  read: svgI('<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/>'),
+  fav: svgI('<path d="m12 3.5 2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z"/>'),
+  notes: svgI('<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 13h7M9 17h5"/>'),
+  nocover: svgI('<rect x="4" y="3" width="16" height="18" rx="2"/><path d="m4 17 5-5 4 4 2-2 5 5M4 3l16 18"/>'),
+  loan: svgI('<path d="M4 12h12M12 8l4 4-4 4M20 4v16"/>')};
+const STATUS_ICON = {unread: NAVI.unread, reading: NAVI.reading, read: NAVI.read};
+function listHTML(view){
+  const rows = view.map(b=>{
+    const st = b.status||"unread";
+    const raf = (b.shelves||[]).map(id=>shelves.get(id)?.name).filter(Boolean).join(", ");
+    const sel = ui.selected.has(b.id);
+    return `<tr data-id="${esc(b.id)}" ${ui.select?`role="checkbox" aria-checked="${sel}"`:""}>
+      <td class="lk"><span class="thumb">${coverHTML(b)}</span><span class="lt"><b>${esc(b.title||"Adsız")}</b><small>${esc(b.author||"")}</small></span></td>
+      <td class="la">${esc(b.author||"")}</td>
+      <td class="lr">${esc(raf)}</td>
+      <td class="ls"><span class="st st-${st}">${STATUS_ICON[st]}${STATUS[st]}</span>${b.loanTo?`<span class="tag loan">Ödünç</span>`:""}</td>
+      <td class="lx"><button class="rb" data-rowact="detail" aria-label="Ayrıntılar">${NAVI.all}</button><button class="rb" data-rowact="menu" aria-label="Diğer">⋯</button></td>
+    </tr>`;
+  }).join("");
+  return `<table class="booktable"><thead><tr><th>Kitap</th><th class="la">Yazar</th><th class="lr">Raf</th><th class="ls">Durum</th><th class="lx"><span class="sr">İşlemler</span></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 /* ---------- render ---------- */
 function render(){
   const all = [...books.values()];
@@ -269,8 +299,17 @@ function render(){
     + sl.map(s=>chip(s.id,s.name,all.filter(b=>(b.shelves||[]).includes(s.id)).length)).join("")
     + (counts.loan ? chip("loan","Ödünçte",counts.loan) : "")
     + `<button class="chip add" id="chipAdd">+ Raf ekle</button>`;
-  $("#statusRow").innerHTML = [["all","Hepsi"],["unread","Okunacak"],["reading","Okunuyor"],["read","Okundu"],["nocover",`Kapaksız (${all.filter(b=>!b.photoId&&!b.coverUrl).length})`]]
+  const cnt = {all:all.length, unread:0, reading:0, read:0, fav:0, notes:0, nocover:0};
+  for (const b of all){ cnt[b.status||"unread"]++; if ((b.rating||0)>=4) cnt.fav++; if (String(b.note||"").trim()) cnt.notes++; if (!b.photoId&&!b.coverUrl) cnt.nocover++; }
+  const NAV = [["all","Tüm Kitaplar",NAVI.all],["unread","Okunacak",NAVI.unread],["reading","Okunuyor",NAVI.reading],["read","Okundu",NAVI.read],
+    ["fav","Favoriler",NAVI.fav],["notes","Notlarım",NAVI.notes],["nocover","Kapaksız",NAVI.nocover]];
+  $("#nav").innerHTML = NAV.map(([k,v,ic])=>`<button class="navitem" data-nav="${k}" aria-current="${ui.status===k && (k!=="all" || ui.shelf==="all")}">${ic}<span>${v}</span><b>${cnt[k]}</b></button>`).join("")
+    + (counts.loan ? `<button class="navitem" data-nav="loan" aria-current="${ui.shelf==="loan"}">${NAVI.loan}<span>Ödünçte</span><b>${counts.loan}</b></button>` : "");
+  $("#navShelves").innerHTML = [["none","Rafsız",counts.none], ...sl.map(s=>[s.id,s.name,all.filter(b=>(b.shelves||[]).includes(s.id)).length])]
+    .map(([id,n,c])=>`<button class="navitem sub" data-shelf="${esc(id)}" aria-current="${ui.shelf===id}"><span>${esc(n)}</span><b>${c}</b></button>`).join("");
+  $("#statusRow").innerHTML = [["all","Hepsi"],["unread","Okunacak"],["reading","Okunuyor"],["read","Okundu"],["fav","Favoriler"],["notes","Notlarım"],["nocover",`Kapaksız (${cnt.nocover})`]]
     .map(([k,v])=>`<button class="pill" data-status="${k}" aria-pressed="${ui.status===k}">${v}</button>`).join("");
+  $("#viewGrid").setAttribute("aria-pressed", ui.view==="grid"); $("#viewList").setAttribute("aria-pressed", ui.view==="list");
 
   const read = all.filter(b=>b.status==="read").length;
   const syncTxt = !Sync.enabled ? "" : ({ok:" · NAS ile eşit", offline:" · NAS'a ulaşılamıyor, sonra eşitlenecek", login:" · NAS girişi gerekli", local:" · eşitleniyor…"}[Sync.state] || "");
@@ -279,7 +318,9 @@ function render(){
 
   const view = sorted(all.filter(b=>inShelf(b,ui.shelf) && matches(b)));
   const grid = $("#grid");
-  grid.innerHTML = view.map(b=>{
+  grid.className = ui.view==="list" ? "list" : "grid";
+  if (ui.view==="list") grid.innerHTML = view.length ? listHTML(view) : "";
+  else grid.innerHTML = view.map(b=>{
     const tags = [];
     if (b.status==="read") tags.push(`<span class="tag read">Okundu</span>`);
     else if (b.status==="reading") tags.push(`<span class="tag">Okunuyor</span>`);
@@ -320,7 +361,13 @@ $("#chips").addEventListener("click", e=>{
   if (e.target.closest("#chipAdd")) openShelfSheet();
 });
 $("#statusRow").addEventListener("click", e=>{ const p=e.target.closest("[data-status]"); if(p){ ui.status=p.dataset.status; render(); }});
-$("#sortSel").addEventListener("change", e=>{ ui.sort=e.target.value; try{localStorage.setItem("kitaplik-ui",JSON.stringify({sort:ui.sort}))}catch{} render(); });
+$("#sortSel").addEventListener("change", e=>{ ui.sort=e.target.value; saveUi(); render(); });
+for (const [btn, v] of [["#viewGrid","grid"],["#viewList","list"]]) $(btn).addEventListener("click", ()=>{ ui.view=v; saveUi(); render(); });
+$("#nav").addEventListener("click", e=>{ const n=e.target.closest("[data-nav]"); if(!n) return;
+  const v=n.dataset.nav; if (v==="loan") { ui.shelf="loan"; ui.status="all"; } else { ui.status=v; if (v==="all") ui.shelf="all"; } render(); });
+$("#navShelves").addEventListener("click", e=>{ const n=e.target.closest("[data-shelf]"); if(n){ ui.shelf=n.dataset.shelf; render(); } });
+$("#navShelfAdd").addEventListener("click", ()=>openShelfSheet());
+$("#btnSettings2").addEventListener("click", ()=>openSettings());
 $("#btnSearch").addEventListener("click", ()=>{
   const r=$("#searchRow"); r.hidden=!r.hidden;
   $("#btnSearch").setAttribute("aria-expanded",!r.hidden); $("#btnSearch").classList.toggle("on",!r.hidden);
@@ -339,8 +386,10 @@ $("#empty").addEventListener("click", e=>{
   if (a.dataset.act==="add") openBook(null); else if (a.dataset.act==="scan") openScanner(); else $("#csvInput").click();
 });
 $("#grid").addEventListener("click", e=>{
-  const c = e.target.closest(".card"); if(!c) return;
+  const c = e.target.closest("[data-id]"); if(!c) return;
   if (longPressed) { longPressed = false; e.preventDefault(); return; }
+  const ra = e.target.closest("[data-rowact]");
+  if (ra && !ui.select) { if (ra.dataset.rowact==="detail") openDetail(c.dataset.id); else { const r=ra.getBoundingClientRect(); openBookMenu(c.dataset.id, r.right-200, r.bottom+4); } return; }
   const id = c.dataset.id;
   if (ui.select){ ui.selected.has(id)?ui.selected.delete(id):ui.selected.add(id); render(); }
   else openDetail(id);
@@ -398,11 +447,11 @@ const head = (title) => `<div class="sheethead"><h2>${title}</h2><button class="
 /* ---------- book menu (right click / long press) ---------- */
 let longPressed = false, lpTimer = null, lpStart = null;
 $("#grid").addEventListener("contextmenu", e=>{
-  const c = e.target.closest(".card"); if (!c || ui.select) return;
+  const c = e.target.closest("[data-id]"); if (!c || ui.select) return;
   e.preventDefault(); openBookMenu(c.dataset.id, e.clientX, e.clientY);
 });
 $("#grid").addEventListener("touchstart", e=>{
-  const c = e.target.closest(".card"); if (!c || ui.select || e.touches.length !== 1) return;
+  const c = e.target.closest("[data-id]"); if (!c || ui.select || e.touches.length !== 1) return;
   const t = e.touches[0]; lpStart = {x:t.clientX, y:t.clientY}; longPressed = false;
   clearTimeout(lpTimer);
   lpTimer = setTimeout(()=>{ longPressed = true; navigator.vibrate?.(10); openBookMenu(c.dataset.id, lpStart.x, lpStart.y); }, 500);
