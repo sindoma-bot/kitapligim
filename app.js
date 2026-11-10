@@ -715,7 +715,7 @@ function openBook(id, prefill, fromDetail){
         </div>
       </div>
       <div id="coverResults" hidden></div>
-      <details id="coverLinkBox"><summary class="meta" style="cursor:pointer;padding-block:2px">Kapağı mağazadan al (Kitapyurdu, idefix, Amazon)</summary>
+      <details id="coverLinkBox"><summary class="meta" style="cursor:pointer;padding-block:2px">Mağazada ara: kapak ve bilgiler (Kitapyurdu, idefix, Amazon)</summary>
         <div class="form" style="gap:8px;margin-top:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap" id="storeLinks"></div>
           <p class="meta" style="margin:0">Mağazada kapağa uzun bas → “Görsel adresini kopyala”, sonra buraya yapıştır.</p>
@@ -783,8 +783,8 @@ function openBook(id, prefill, fromDetail){
     try {
       const info = await Lookup.byIsbn(isbn);
       if (info) { fill(info, !f("title").value.trim()); toast(`Bilgiler ${info.source} kaynağından geldi`); }
-      else toast(Lookup.errors().some(e=>e.includes("429")) ? "Bulunamadı: Google'ın günlük sorgu hakkı dolmuş (yarın sabah tekrar dene). Bilgileri elle yazabilirsin." : "Bu ISBN için kayıt bulunamadı. Bilgileri elle yazabilirsin.", 4500);
-    } catch { toast("İnternete bağlanılamadı."); }
+      else showStores(), toast(Lookup.errors().some(e=>e.includes("429")) ? "Bulunamadı: Google'ın günlük sorgu hakkı dolmuş (yarın sabah tekrar dene). Bilgileri elle yazabilirsin." : "Bu ISBN için kayıt bulunamadı. Bilgileri elle yazabilirsin.", 4500);
+    } catch { showStores(); toast("Bilgi kaynaklarına ulaşılamadı. Mağaza bağlantılarıyla bakabilirsin."); }
     btn.disabled = false; btn.textContent = "Bilgileri getir";
   });
   sh.querySelector("#scanHere").addEventListener("click", ()=>{
@@ -795,7 +795,7 @@ function openBook(id, prefill, fromDetail){
     }});
   });
   const drawStoreLinks = () => {
-    const q = encodeURIComponent([f("title").value.trim(), f("author").value.trim()].filter(Boolean).join(" "));
+    const q = encodeURIComponent([f("title").value.trim(), f("author").value.trim()].filter(Boolean).join(" ") || Lookup.cleanIsbn(f("isbn").value));
     sh.querySelector("#storeLinks").innerHTML = [
       ["Kitapyurdu", `https://www.kitapyurdu.com/index.php?route=product/search&filter_name=${q}`],
       ["idefix", `https://www.idefix.com/arama?q=${q}`],
@@ -803,6 +803,8 @@ function openBook(id, prefill, fromDetail){
     ].map(([n,u])=>`<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${n}'da ara</a>`).join("");
   };
   sh.querySelector("#coverLinkBox").addEventListener("toggle", drawStoreLinks);
+  const showStores = () => { const d = sh.querySelector("#coverLinkBox"); d.open = true; drawStoreLinks(); d.scrollIntoView({block:"center", behavior:"smooth"}); };
+  if (!id && prefill && prefill.isbn && !prefill.title) setTimeout(showStores, 300);
   sh.querySelector("#useCoverUrl").addEventListener("click", ()=>{
     const u = f("coverUrl").value.trim();
     if (!/^https:\/\/\S+$/i.test(u)) { toast("https:// ile başlayan bir görsel bağlantısı yapıştır"); return; }
