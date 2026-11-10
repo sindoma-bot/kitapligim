@@ -418,6 +418,13 @@ function openBook(id, prefill){
         </div>
       </div>
       <div id="coverResults" hidden></div>
+      <details id="coverLinkBox"><summary class="meta" style="cursor:pointer;padding-block:2px">Kapağı mağazadan al (Kitapyurdu, idefix, Amazon)</summary>
+        <div class="form" style="gap:8px;margin-top:8px">
+          <div style="display:flex;gap:8px;flex-wrap:wrap" id="storeLinks"></div>
+          <p class="meta" style="margin:0">Mağazada kapağa uzun bas → “Görsel adresini kopyala”, sonra buraya yapıştır.</p>
+          <div class="lookup"><label class="f">Kapak bağlantısı<input id="f_coverUrl" inputmode="url" autocomplete="off" placeholder="https://…jpg"></label><button type="button" class="btn" id="useCoverUrl">Kullan</button></div>
+        </div>
+      </details>
       <label class="f">Kitap adı<input id="f_title" required value="${esc(b.title)}" autocomplete="off"></label>
       <label class="f">Yazar<input id="f_author" value="${esc(b.author)}" autocomplete="off" list="authors"></label>
       <datalist id="authors">${[...new Set([...books.values()].map(x=>x.author).filter(Boolean))].sort(coll.compare).slice(0,600).map(a=>`<option value="${esc(a)}">`).join("")}</datalist>
@@ -492,6 +499,22 @@ function openBook(id, prefill){
       openBook(id, {...draft, ...(info||{}), isbn: code, title: draft.title || info?.title || "", author: draft.author || info?.author || ""});
       if (!info) toast("Barkod okundu ama kitap bilgisi bulunamadı.", 3500);
     }});
+  });
+  const drawStoreLinks = () => {
+    const q = encodeURIComponent([f("title").value.trim(), f("author").value.trim()].filter(Boolean).join(" "));
+    sh.querySelector("#storeLinks").innerHTML = [
+      ["Kitapyurdu", `https://www.kitapyurdu.com/index.php?route=product/search&filter_name=${q}`],
+      ["idefix", `https://www.idefix.com/search?q=${q}`],
+      ["Amazon", `https://www.amazon.com.tr/s?k=${q}&i=stripbooks`]
+    ].map(([n,u])=>`<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${n}'da ara</a>`).join("");
+  };
+  sh.querySelector("#coverLinkBox").addEventListener("toggle", drawStoreLinks);
+  sh.querySelector("#useCoverUrl").addEventListener("click", ()=>{
+    const u = f("coverUrl").value.trim();
+    if (!/^https:\/\/\S+$/i.test(u)) { toast("https:// ile başlayan bir görsel bağlantısı yapıştır"); return; }
+    if (pendingPhoto){URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null;}
+    if (b.photoId){ b._oldPhoto=b.photoId; b.photoId=null; }
+    b.coverUrl = u; preview(); toast("Kapak eklendi, kaydetmeyi unutma");
   });
   sh.querySelector("#findCover").addEventListener("click", async e=>{
     const title = f("title").value.trim(); if (!title){ toast("Önce kitap adını yaz"); f("title").focus(); return; }
