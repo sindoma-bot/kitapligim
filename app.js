@@ -238,7 +238,8 @@ function inShelf(b, sid){
   return (b.shelves||[]).includes(sid);
 }
 function matches(b){
-  if (ui.status!=="all" && (b.status||"unread")!==ui.status) return false;
+  if (ui.status==="nocover") { if (b.photoId || b.coverUrl) return false; }
+  else if (ui.status!=="all" && (b.status||"unread")!==ui.status) return false;
   if (!ui.q) return true;
   const hay = low([b.title,b.author,b.publisher,b.translator,b.isbn,b.note,b.about,b.loanTo,b.year].join(" "));
   return low(ui.q).split(/\s+/).filter(Boolean).every(w=>hay.includes(w));
@@ -268,7 +269,7 @@ function render(){
     + sl.map(s=>chip(s.id,s.name,all.filter(b=>(b.shelves||[]).includes(s.id)).length)).join("")
     + (counts.loan ? chip("loan","Ödünçte",counts.loan) : "")
     + `<button class="chip add" id="chipAdd">+ Raf ekle</button>`;
-  $("#statusRow").innerHTML = [["all","Hepsi"],["unread","Okunacak"],["reading","Okunuyor"],["read","Okundu"]]
+  $("#statusRow").innerHTML = [["all","Hepsi"],["unread","Okunacak"],["reading","Okunuyor"],["read","Okundu"],["nocover",`Kapaksız (${all.filter(b=>!b.photoId&&!b.coverUrl).length})`]]
     .map(([k,v])=>`<button class="pill" data-status="${k}" aria-pressed="${ui.status===k}">${v}</button>`).join("");
 
   const read = all.filter(b=>b.status==="read").length;

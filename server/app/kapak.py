@@ -134,6 +134,8 @@ def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
     # Kitapyurdu antwortet automatischen Abfragen mit HTTP 403 (gesperrt); deshalb nicht mehr abgefragt.
     for name, f in (
         ("Google Books", lambda: google(titel, autor, isbn, google_key)),
+        # zweiter Versuch: nur Titel (Autor oft anders geschrieben, z. B. "Prof.Dr." oder zwei Autoren)
+        ("Google Books", lambda: google(titel, "", "", google_key) if autor and not isbn else (None, None)),
         ("Open Library", lambda: openlibrary(titel, autor, isbn)),
     ):
         try:
