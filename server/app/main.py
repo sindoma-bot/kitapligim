@@ -39,7 +39,8 @@ FOTO_ID = re.compile(r"^[A-Za-z0-9_-]{6,80}$")
 BILDTYPEN = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "image/webp"}
 
 
-def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None, kapak_suche=None) -> FastAPI:
+def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None, kapak_suche=None,
+                 yazar_suche=None, yazar_bild=None) -> FastAPI:
     env = dict(os.environ) if env is None else env
     data = Path(data_dir or env.get("DATA_DIR") or "/data")
     web = Path(web_dir or env.get("WEB_DIR") or Path(__file__).resolve().parents[2]).resolve()
@@ -66,6 +67,8 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
     sitzung_sek = float(env.get("SITZUNG_TAGE") or 365) * 86400
     fehlversuche: dict[str, list[float]] = defaultdict(list)
     kapak_suche = kapak_suche or kp.suche
+    yazar_suche = yazar_suche or kp.vikipedi
+    yazar_bild = yazar_bild or kp.yazar_bild
 
     app = FastAPI(title="Kitaplığım", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -214,6 +217,54 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
         fid = "nas-" + secrets.token_hex(12)
         foto_pfad(fid).write_bytes(ergebnis["bild"])
         return no_store({"photoId": fid, "quelle": ergebnis["quelle"], "fehler": ergebnis["fehler"]})
+
+    # ---------------------------------------------------------------- Autoren-Kurzbiografie
+
+    def _yazar_antwort(d: dict) -> JSONResponse:
+        return no_store({k: d.get(k) for k in ("name", "bio", "photoId", "url", "quelle", "manuell")})
+
+    @app.get("/api/yazar")
+    async def yazar_holen(ad: str = "", neu: int = 0, _a: bool = Depends(angemeldet)):
+        ad = ad.strip()[:200]
+        key = kp.yazar_schluessel(ad)
+        if not key:
+            raise HTTPException(400, "Yazar adı gerekli.")
+        d = db.yazar(key)
+        # Nicht gefundene Autoren erst nach 30 Tagen erneut suchen; neu=1 erzwingt die Suche
+        if d and (d.get("bio") or d.get("manuell") or (not neu and time.time() - d.get("gesucht", 0) < 30 * 86400)):
+            return _yazar_antwort(d)
+        try:
+            info, err = await run_in_threadpool(yazar_suche, ad)
+        except Exception as e:
+            info, err = None, f"Vikipedi: {type(e).__name__}"
+        if err:
+            return no_store({"name": ad, "bio": None, "fehler": err})
+        d = {"name": ad, "bio": None, "photoId": None, "url": None, "quelle": None, "gesucht": time.time()}
+        if info:
+            d.update(name=info["titel"], bio=info["bio"], url=info["url"], quelle="Vikipedi")
+            bild = await run_in_threadpool(yazar_bild, info.get("bild_url") or "")
+            if bild:
+                fid = "yzr-" + secrets.token_hex(12)
+                foto_pfad(fid).write_bytes(bild)
+                d["photoId"] = fid
+        db.yazar_speichern(key, d, time.time())
+        return _yazar_antwort(d)
+
+    @app.put("/api/yazar")
+    async def yazar_aendern(request: Request, _a: bool = Depends(angemeldet)):
+        try:
+            body = await request.json()
+        except Exception:
+            raise HTTPException(400, "Geçersiz veri.")
+        ad = str((body or {}).get("ad") or "").strip()[:200]
+        key = kp.yazar_schluessel(ad)
+        if not key:
+            raise HTTPException(400, "Yazar adı gerekli.")
+        d = db.yazar(key) or {"name": ad, "photoId": None, "url": None}
+        bio = str(body.get("bio") or "").strip()[:5000]
+        d.update(bio=bio or None, manuell=bool(bio), quelle=None if bio else d.get("quelle"), gesucht=time.time())
+        db.yazar_speichern(key, d, time.time())
+        return _yazar_antwort(d)
 
     # ---------------------------------------------------------------- Oberfläche
 

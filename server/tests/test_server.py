@@ -179,3 +179,45 @@ def test_idefix_parsing(monkeypatch):
     assert kapak.idefix("Kürk Mantolu Madonna", "Sabahattin Ali") == (None, None)
     monkeypatch.setattr(kapak, "_get", lambda url, **kw: (403, b"", ""))
     assert kapak.idefix("Efendi", "") == (None, "idefix HTTP 403")
+
+
+def test_author_bio(tmp_path, web):
+    calls = []
+    def fake(ad):
+        calls.append(ad)
+        if "Maalouf" in ad:
+            return {"titel": "Amin Maalouf", "bio": "1949'da Beyrut'ta doğdu.", "bild_url": "x", "url": "https://tr.wikipedia.org/wiki/Amin_Maalouf"}, None
+        return None, None
+    c = TestClient(erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": hashlib.sha256(PW.encode()).hexdigest()},
+                                yazar_suche=fake, yazar_bild=lambda u: b"\xff\xd8\xff" + b"1" * 2000))
+    assert c.get("/api/yazar?ad=Amin%20Maalouf").status_code == 401
+    login(c)
+    r = c.get("/api/yazar?ad=Amin%20Maalouf").json()
+    assert r["bio"].startswith("1949") and r["photoId"].startswith("yzr-") and r["quelle"] == "Vikipedi"
+    assert c.get("/api/fotos/" + r["photoId"]).status_code == 200
+    c.get("/api/yazar?ad=Amin%20Maalouf")
+    assert calls == ["Amin Maalouf"]  # zweiter Aufruf aus dem Speicher
+    assert c.get("/api/yazar?ad=Yok%20Biri").json()["bio"] is None
+    c.get("/api/yazar?ad=Yok%20Biri")
+    assert calls.count("Yok Biri") == 1  # nicht gefunden wird auch gemerkt
+    r = c.put("/api/yazar", json={"ad": "Yok Biri", "bio": "Kendi yazdığım."}).json()
+    assert r["bio"] == "Kendi yazdığım." and r["manuell"]
+    assert c.get("/api/yazar?ad=Yok%20Biri&neu=1").json()["bio"] == "Kendi yazdığım."
+
+
+def test_vikipedi_parsing(monkeypatch):
+    import json as _j
+    from app import kapak
+    assert kapak.yazar_schluessel("Prof.Dr. Pertev Naili Boratav") == "pertev naili boratav"
+    def fake(url):
+        if "list=search" in url:
+            return 200, _j.dumps({"query": {"search": [{"title": "Sait Faik (anlam ayrımı)"}, {"title": "Sait Faik Abasıyanık"}]}}).encode()
+        if "Sait_Faik_Abas" in url:
+            return 200, _j.dumps({"type": "standard", "title": "Sait Faik Abasıyanık", "extract": "Türk öykü yazarı.",
+                                  "thumbnail": {"source": "https://upload.wikimedia.org/a.jpg"},
+                                  "content_urls": {"desktop": {"page": "https://tr.wikipedia.org/wiki/Sait_Faik_Abas%C4%B1yan%C4%B1k"}}}).encode()
+        return 404, b""
+    monkeypatch.setattr(kapak, "_wiki_get", fake)
+    info, err = kapak.vikipedi("Sait Faik Abasıyanık")
+    assert err is None and info["bio"] == "Türk öykü yazarı." and info["bild_url"].endswith("a.jpg")
+    assert kapak.vikipedi("Başka Birisi") == (None, None)

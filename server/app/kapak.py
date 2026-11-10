@@ -203,3 +203,69 @@ def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
             if bild:
                 return {"bild": bild, "quelle": name, "fehler": fehler}
     return {"bild": None, "quelle": None, "fehler": fehler}
+
+
+# ---------------------------------------------------------------- Autoren-Kurzbiografie (Vikipedi)
+
+WIKI_UA = "Kitapligim/1.0 (private home library app)"
+_TITEL = {"prof", "dr", "doc", "doç", "yrd", "ord", "av", "hz"}
+
+
+def yazar_schluessel(name: str) -> str:
+    """Normalisierter Name ohne Titel, z. B. "Prof.Dr. Pertev Naili Boratav" -> "pertev naili boratav"."""
+    return " ".join(t for t in _norm(name).split() if t not in _TITEL)
+
+
+def _wiki_get(url: str) -> tuple[int, bytes]:
+    req = urllib.request.Request(url, headers={"User-Agent": WIKI_UA, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as r:
+            return r.status, r.read(2 * 1024 * 1024)
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+
+
+def vikipedi(name: str, sprache: str = "tr") -> tuple[dict | None, str | None]:
+    """Sucht den Autor in der Wikipedia und gibt ({titel, bio, bild_url, url}, Fehler) zurück.
+    Ein Treffer zählt nur, wenn alle Namensteile im Artikeltitel stehen und es keine Begriffsklärung ist."""
+    key = yazar_schluessel(name)
+    if not key:
+        return None, None
+    teile = key.split()
+    base = f"https://{sprache}.wikipedia.org"
+    q = urllib.parse.urlencode({"action": "query", "list": "search", "srsearch": key, "srlimit": "6", "format": "json"})
+    status, body = _wiki_get(f"{base}/w/api.php?{q}")
+    if status != 200:
+        return None, f"Vikipedi HTTP {status}"
+    treffer = [h.get("title", "") for h in (json.loads(body or b"{}").get("query") or {}).get("search") or []]
+    for titel in treffer:
+        nt = _norm(re.sub(r"\(.*?\)", "", titel))
+        if not all(t in nt.split() for t in teile):
+            continue
+        status, body = _wiki_get(f"{base}/api/rest_v1/page/summary/" + urllib.parse.quote(titel.replace(" ", "_")))
+        if status != 200:
+            continue
+        d = json.loads(body or b"{}")
+        if d.get("type") == "disambiguation" or not (d.get("extract") or "").strip():
+            continue
+        return {
+            "titel": d.get("title") or titel,
+            "bio": d["extract"].strip(),
+            "bild_url": ((d.get("originalimage") or d.get("thumbnail") or {}).get("source")) or "",
+            "url": ((d.get("content_urls") or {}).get("desktop") or {}).get("page") or f"{base}/wiki/" + urllib.parse.quote(titel.replace(" ", "_")),
+        }, None
+    return None, None
+
+
+def yazar_bild(url: str) -> bytes | None:
+    if not url:
+        return None
+    req = urllib.request.Request(url, headers={"User-Agent": WIKI_UA, "Accept": "image/*"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as r:
+            body = r.read(4 * 1024 * 1024)
+    except Exception:
+        return None
+    if body.startswith(b"\xff\xd8\xff") or body.startswith(b"\x89PNG") or body.startswith(b"RIFF"):
+        return body
+    return None

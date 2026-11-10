@@ -57,6 +57,8 @@ Nach 8 falschen Passwörtern sperrt der Server die Anmeldung für 15 Minuten.
 
 „Eksikleri internetten bul“ sucht auf der NAS bei Google Books und Open Library (nur bei passendem Titel) und
 speichert das gefundene Bild in `data/fotos`. Am Ende zeigt die App, welche Quelle Fehler gemeldet hat.
+Die Kurzbiografie unter „Yazar Hakkında“ holt die NAS aus der türkischen Wikipedia (Vikipedi) und speichert sie samt Foto; selbst geschriebene Texte haben Vorrang.
+
 Kitapyurdu (HTTP 403) und idefix (robots.txt) erlauben keine automatischen Abfragen; dafür gibt es im Buch die Suchlinks unter „Kapağı mağazadan al“.
 
 Google Books ohne Schlüssel antwortet oft mit „HTTP 429“. Optional einen kostenlosen API-Schlüssel anlegen

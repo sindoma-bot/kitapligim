@@ -41,6 +41,7 @@ class Datenbank:
                 );
                 CREATE INDEX IF NOT EXISTS ix_rev ON datensaetze(rev);
                 CREATE TABLE IF NOT EXISTS sitzungen (token TEXT PRIMARY KEY, ablauf REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS yazarlar (schluessel TEXT PRIMARY KEY, daten TEXT NOT NULL, geaendert REAL NOT NULL);
                 """
             )
 
@@ -125,7 +126,26 @@ class Datenbank:
             rows = self.con.execute(
                 "SELECT json_extract(daten,'$.photoId') AS p FROM datensaetze WHERE art='books' AND geloescht=0"
             ).fetchall()
-            return {r["p"] for r in rows if r["p"]}
+            ids = {r["p"] for r in rows if r["p"]}
+            for r in self.con.execute("SELECT json_extract(daten,'$.photoId') AS p FROM yazarlar").fetchall():
+                if r["p"]:
+                    ids.add(r["p"])
+            return ids
+
+    # ------------------------------------------------------------ Autoren (Kurzbiografie, nur auf der NAS)
+
+    def yazar(self, schluessel: str) -> dict | None:
+        with self.lock:
+            r = self.con.execute("SELECT daten FROM yazarlar WHERE schluessel=?", (schluessel,)).fetchone()
+            return json.loads(r["daten"]) if r else None
+
+    def yazar_speichern(self, schluessel: str, daten: dict, jetzt: float) -> None:
+        with self.lock, self.con:
+            self.con.execute(
+                "INSERT INTO yazarlar(schluessel, daten, geaendert) VALUES(?,?,?) "
+                "ON CONFLICT(schluessel) DO UPDATE SET daten=excluded.daten, geaendert=excluded.geaendert",
+                (schluessel, json.dumps(daten, ensure_ascii=False), jetzt),
+            )
 
     def zaehle(self) -> dict:
         with self.lock:

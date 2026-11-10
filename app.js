@@ -528,6 +528,60 @@ function openShelfPicker(id){
   });
 }
 
+/* ---------- author bio (fetched on the NAS from Vikipedi, cached on the device) ---------- */
+const firstAuthor = a => String(a||"").split(/[,;&]| ve /)[0].trim();
+const yazarKey = a => low(firstAuthor(a)).replace(/\b(prof|dr|doç|doc|yrd|ord)\b\.?/g," ").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+const yazarCache = new Map();
+try { for (const [k,v] of Object.entries(JSON.parse(localStorage.getItem("kitaplik-yazar")||"{}"))) yazarCache.set(k,v); } catch {}
+function saveYazarCache(){ try { localStorage.setItem("kitaplik-yazar", JSON.stringify(Object.fromEntries(yazarCache))); } catch {} }
+function yazarHTML(b, y){
+  const key = yazarKey(b.author);
+  const others = [...books.values()].filter(x=>x.id!==b.id && yazarKey(x.author)===key).sort((a,c)=>coll.compare(a.title||"",c.title||""));
+  const works = others.length ? `<div class="yzw"><b>Kitaplığımdaki diğer eserleri (${others.length}):</b>${others.slice(0,12).map(x=>`<button type="button" class="yzl" data-open="${esc(x.id)}">${esc(x.title)}</button>`).join("")}${others.length>12?`<span class="meta">ve ${others.length-12} kitap daha</span>`:""}</div>` : "";
+  const name = esc(y?.name || firstAuthor(b.author));
+  const photo = y?.photoId ? `<img data-photo="${esc(y.photoId)}" alt="" hidden>` : `<span class="yzi">${esc((firstAuthor(b.author)[0]||"?").toLocaleUpperCase("tr"))}</span>`;
+  let body;
+  if (!y) body = `<p class="meta">${Sync.enabled ? "Özgeçmiş aranıyor…" : "Özgeçmiş NAS bağlantısıyla gelir."}</p>`;
+  else if (y.bio) body = `<div class="yzbio clamp" id="yzBio">${esc(y.bio)}</div><button type="button" class="more" id="yzMore" hidden>Devamını oku ↓</button>
+      <div class="meta yzsrc">${y.manuell?"Kendi notun":`Kaynak: ${y.url?`<a href="${esc(y.url)}" target="_blank" rel="noopener">Vikipedi</a>`:"Vikipedi"}`} · <button type="button" class="linkbtn" id="yzEdit">Düzenle</button></div>`;
+  else body = `<p class="meta">${y.fehler?`Vikipedi'ye ulaşılamadı (${esc(y.fehler)}).`:"Vikipedi'de bu yazar bulunamadı."} <button type="button" class="linkbtn" id="yzEdit">Kendin yaz</button>${y.fehler?` · <button type="button" class="linkbtn" id="yzRetry">Tekrar dene</button>`:""}</p>`;
+  return `<div class="yzp">${photo}</div><div class="yzt"><div class="yzn">${name}</div><div class="meta">Özgeçmişi</div>${body}
+    <div id="yzForm" hidden><textarea id="yzText" rows="6" placeholder="Yazar hakkında kısa bilgi">${esc(y?.bio||"")}</textarea>
+      <div class="foot"><button type="button" class="btn" id="yzCancel">Vazgeç</button><button type="button" class="btn primary" id="yzSave">Kaydet</button></div></div>${works}</div>`;
+}
+async function loadYazar(sh, b, neu){
+  const key = yazarKey(b.author), box = sh.querySelector("#yzBox"); if (!box) return;
+  const draw = y => { box.innerHTML = yazarHTML(b, y); hydratePhotos(box); wireYazar(sh, b); };
+  draw(yazarCache.get(key));
+  if (!Sync.enabled || (yazarCache.get(key) && !neu && (yazarCache.get(key).bio || Date.now()-(yazarCache.get(key).at||0) < 7*86400000))) return;
+  try {
+    const r = await fetch(`api/yazar?ad=${encodeURIComponent(firstAuthor(b.author))}${neu?"&neu=1":""}`, {credentials:"same-origin", cache:"no-store"});
+    if (!r.ok) return;
+    const y = {...await r.json(), at: Date.now()};
+    if (!y.fehler) { yazarCache.set(key, y); saveYazarCache(); }
+    if (sh.isConnected) draw(y);
+  } catch {}
+}
+function wireYazar(sh, b){
+  const box = sh.querySelector("#yzBox");
+  const bio = box.querySelector("#yzBio"), more = box.querySelector("#yzMore");
+  if (bio) requestAnimationFrame(()=>{ if (bio.scrollHeight > bio.clientHeight + 4) more.hidden = false; });
+  more?.addEventListener("click", ()=>{ const c = bio.classList.toggle("clamp"); more.textContent = c ? "Devamını oku ↓" : "Gizle ↑"; });
+  box.querySelector("#yzRetry")?.addEventListener("click", ()=>loadYazar(sh, b, true));
+  box.querySelector("#yzEdit")?.addEventListener("click", ()=>{ box.querySelector("#yzForm").hidden=false; box.querySelector("#yzText").focus(); });
+  box.querySelector("#yzCancel")?.addEventListener("click", ()=>{ box.querySelector("#yzForm").hidden=true; });
+  box.querySelector("#yzSave")?.addEventListener("click", async ()=>{
+    if (!Sync.enabled) { toast("Bunun için NAS bağlantısı gerekli"); return; }
+    try {
+      const r = await fetch("api/yazar", {method:"PUT", credentials:"same-origin", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ad: firstAuthor(b.author), bio: box.querySelector("#yzText").value})});
+      if (!r.ok) throw 0;
+      const y = {...await r.json(), at: Date.now()}; yazarCache.set(yazarKey(b.author), y); saveYazarCache();
+      box.innerHTML = yazarHTML(b, y); hydratePhotos(box); wireYazar(sh, b); toast("Kaydedildi");
+    } catch { toast("Kaydedilemedi"); }
+  });
+  box.querySelectorAll("[data-open]").forEach(x=>x.addEventListener("click", ()=>openDetail(x.dataset.open)));
+}
+
 /* ---------- book detail (read view) ---------- */
 const ICON_ST = {
   unread:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
@@ -560,6 +614,7 @@ function openDetail(id){
       </section>
       ${b.about?`<section class="dsec"><h3>Hakkında</h3><div class="dabout clamp" id="dAbout">${esc(b.about)}</div><button type="button" class="more" id="dMore" hidden>Devamını oku ↓</button></section>`:""}
       ${(künye.length||kategori.length)?`<section class="dsec"><h3>Künye</h3><dl class="dkunye">${künye.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>${kategori.length?`<div class="dcat">${kategori.map((c,i)=>i===kategori.length-1?`<b>${esc(c)}</b>`:esc(c)).join(" › ")}</div>`:""}</section>`:""}
+      ${b.author?`<section class="dsec" id="dYazar"><h3>Yazar Hakkında</h3><div class="yz" id="yzBox">${yazarHTML(b, yazarCache.get(yazarKey(b.author)))}</div></section>`:""}
       <section class="dsec"><h3>Kitaplığımda</h3><dl class="dkunye">
         <dt>Raf</dt><dd>${raf.length?raf.map(esc).join(", "):"Rafsız"}</dd>
         ${b.loanTo?`<dt>Ödünç</dt><dd>${esc(b.loanTo)}${b.loanDate?` · ${esc(new Date(b.loanDate).toLocaleDateString("tr-TR"))}`:""}</dd>`:""}
@@ -595,6 +650,7 @@ function openDetail(id){
     nv.querySelector("#dNoteEdit").addEventListener("click", ()=>{ nv.hidden=true; nf.hidden=false; });
     nf.hidden=true; nv.hidden=false; toast("Not kaydedildi");
   });
+  if (b.author) loadYazar(sh, b);
   const ab = sh.querySelector("#dAbout"), more = sh.querySelector("#dMore");
   if (ab) requestAnimationFrame(()=>{ if (ab.scrollHeight > ab.clientHeight + 4) more.hidden = false; });
   if (more) more.addEventListener("click", ()=>{ const open = ab.classList.toggle("clamp"); more.textContent = open ? "Devamını oku ↓" : "Daha az göster ↑"; });
