@@ -342,7 +342,7 @@ $("#grid").addEventListener("click", e=>{
   const c = e.target.closest(".card"); if(!c) return;
   const id = c.dataset.id;
   if (ui.select){ ui.selected.has(id)?ui.selected.delete(id):ui.selected.add(id); render(); }
-  else openBook(id);
+  else openDetail(id);
 });
 $("#selApply").addEventListener("click", ()=>bulkShelf(true));
 $("#selAll").addEventListener("click", ()=>{
@@ -393,6 +393,72 @@ function closeSheet(){
   $("#sheetRoot").innerHTML=""; document.removeEventListener("keydown", escClose);
 }
 const head = (title) => `<div class="sheethead"><h2>${title}</h2><button class="iconbtn" data-close aria-label="Kapat">✕</button></div>`;
+
+/* ---------- book detail (read view) ---------- */
+const ICON_ST = {
+  unread:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
+  reading:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13c-3-.5-6 0-8 1.5zM12 6v13"/></svg>',
+  read:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>'};
+const ST_VERB = {unread:"Okuyacağım", reading:"Okuyorum", read:"Okudum"};
+function openDetail(id){
+  const b = books.get(id); if (!b) return;
+  const künye = [["Yayınevi",b.publisher],["Yayın yılı",b.year],["Dil",b.language],["Sayfa sayısı",b.pages],["Çevirmen",b.translator],["ISBN",b.isbn]].filter(([,v])=>v);
+  const raf = (b.shelves||[]).map(sid=>shelves.get(sid)?.name).filter(Boolean);
+  const sh = openSheet(`<div class="sheethead"><span></span><button class="iconbtn" data-close aria-label="Kapat">✕</button></div>
+    <div class="detail">
+      <div class="dhead"><h2>${esc(b.title||"Adsız")}</h2>
+        ${b.author?`<div class="dauthor">${esc(b.author)}</div>`:""}${b.publisher?`<div class="dpub">${esc(b.publisher)}</div>`:""}</div>
+      <button type="button" class="dcover" id="dZoom" aria-label="Kapağı büyüt">${coverHTML(b)}</button>
+      <div class="dstatus" role="group" aria-label="Okuma durumu">
+        ${Object.keys(ST_VERB).map(k=>`<button type="button" data-st="${k}" aria-pressed="${(b.status||"unread")===k}">${ICON_ST[k]}<span>${ST_VERB[k]}</span></button>`).join("")}
+      </div>
+      <div class="dstars" id="dStars" aria-label="Puan"></div>
+      <section class="dsec"><h3>Notum</h3>
+        <div id="dNoteView">${b.note?`<p class="dnote">${esc(b.note)}</p>`:""}<button type="button" class="btn" id="dNoteEdit">${b.note?"Notu düzenle":"Not ekle"}</button></div>
+        <div id="dNoteForm" hidden><textarea id="dNote" rows="5" placeholder="Altını çizdiğin yerler, düşüncelerin, nereden aldığın…">${esc(b.note)}</textarea>
+          <div class="foot"><button type="button" class="btn" id="dNoteCancel">Vazgeç</button><button type="button" class="btn primary" id="dNoteSave">Notu kaydet</button></div></div>
+      </section>
+      ${b.about?`<section class="dsec"><h3>Hakkında</h3><div class="dabout clamp" id="dAbout">${esc(b.about)}</div><button type="button" class="more" id="dMore" hidden>Devamını oku ↓</button></section>`:""}
+      ${künye.length?`<section class="dsec"><h3>Künye</h3><dl class="dkunye">${künye.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl></section>`:""}
+      <section class="dsec"><h3>Kitaplığımda</h3><dl class="dkunye">
+        <dt>Raf</dt><dd>${raf.length?raf.map(esc).join(", "):"Rafsız"}</dd>
+        ${b.loanTo?`<dt>Ödünç</dt><dd>${esc(b.loanTo)}${b.loanDate?` · ${esc(new Date(b.loanDate).toLocaleDateString("tr-TR"))}`:""}</dd>`:""}
+        ${b.addedAt?`<dt>Eklenme</dt><dd>${new Date(b.addedAt).toLocaleDateString("tr-TR",{day:"numeric",month:"long",year:"numeric"})}</dd>`:""}
+      </dl></section>
+      <div class="foot"><span></span><button type="button" class="btn primary" id="dEdit">Düzenle</button></div>
+    </div>`);
+  hydratePhotos(sh);
+  const cur = () => books.get(id) || b;
+  const update = async patch => { const nb = {...cur(), ...patch, updatedAt: Date.now()}; await saveBook(nb); return nb; };
+  sh.querySelector(".dstatus").addEventListener("click", async e=>{
+    const t = e.target.closest("[data-st]"); if (!t) return;
+    await update({status:t.dataset.st});
+    sh.querySelectorAll("[data-st]").forEach(x=>x.setAttribute("aria-pressed", x===t));
+    toast(STATUS[t.dataset.st]);
+  });
+  const drawStars = () => { const r = cur().rating||0; sh.querySelector("#dStars").innerHTML = [1,2,3,4,5].map(i=>`<button type="button" data-r="${i}" class="${i<=r?"on":""}" aria-label="${i} yıldız">★</button>`).join(""); };
+  drawStars();
+  sh.querySelector("#dStars").addEventListener("click", async e=>{ const t=e.target.closest("[data-r]"); if(!t) return; const r=+t.dataset.r; await update({rating: r===(cur().rating||0)?0:r}); drawStars(); });
+  const nv = sh.querySelector("#dNoteView"), nf = sh.querySelector("#dNoteForm");
+  sh.querySelector("#dNoteEdit").addEventListener("click", ()=>{ nv.hidden=true; nf.hidden=false; sh.querySelector("#dNote").focus(); });
+  sh.querySelector("#dNoteCancel").addEventListener("click", ()=>{ nf.hidden=true; nv.hidden=false; });
+  sh.querySelector("#dNoteSave").addEventListener("click", async ()=>{
+    const note = sh.querySelector("#dNote").value; await update({note});
+    nv.innerHTML = `${note.trim()?`<p class="dnote">${esc(note)}</p>`:""}<button type="button" class="btn" id="dNoteEdit">${note.trim()?"Notu düzenle":"Not ekle"}</button>`;
+    nv.querySelector("#dNoteEdit").addEventListener("click", ()=>{ nv.hidden=true; nf.hidden=false; });
+    nf.hidden=true; nv.hidden=false; toast("Not kaydedildi");
+  });
+  const ab = sh.querySelector("#dAbout"), more = sh.querySelector("#dMore");
+  if (ab) requestAnimationFrame(()=>{ if (ab.scrollHeight > ab.clientHeight + 4) more.hidden = false; });
+  if (more) more.addEventListener("click", ()=>{ const open = ab.classList.toggle("clamp"); more.textContent = open ? "Devamını oku ↓" : "Daha az göster ↑"; });
+  sh.querySelector("#dEdit").addEventListener("click", ()=>openBook(id));
+  sh.querySelector("#dZoom").addEventListener("click", ()=>{
+    const img = sh.querySelector(".dcover img:not([hidden])");
+    if (!img || !img.src) return;
+    const z = document.createElement("div"); z.className = "zoom"; z.innerHTML = `<img src="${img.src}" alt=""><button class="iconbtn" aria-label="Kapat">✕</button>`;
+    z.addEventListener("click", ()=>z.remove()); document.body.appendChild(z);
+  });
+}
 
 /* ---------- book form ---------- */
 let pendingPhoto = null; // {blob, url}
