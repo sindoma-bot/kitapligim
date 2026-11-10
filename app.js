@@ -422,6 +422,7 @@ function openBookMenu(id, x, y){
   scrim.innerHTML = `<div class="bmenu" role="menu" aria-label="${esc(b.title)}">
     <div class="bmenu-t">${esc(b.title||"Adsız")}</div>
     <button role="menuitem" data-m="shelves">Raf düzenle</button>
+    <button role="menuitem" data-m="cover">İnternette kapak ara</button>
     <div class="bmenu-st">${Object.entries(STATUS).map(([k,v])=>`<button role="menuitemradio" aria-checked="${st===k}" data-m="st:${k}">${v}</button>`).join("")}</div>
     <button role="menuitem" data-m="detail">Ayrıntılar</button>
     <button role="menuitem" data-m="edit">Düzenle</button>
@@ -448,6 +449,7 @@ function openBookMenu(id, x, y){
     if (a === "shelves") openShelfPicker(id);
     else if (a === "detail") openDetail(id);
     else if (a === "edit") openBook(id);
+    else if (a === "cover") { openBook(id); const fc = document.querySelector(".sheet #findCover"); if (fc) { fc.scrollIntoView({block:"center"}); fc.click(); } }
     else if (a.startsWith("st:")) { const k = a.slice(3); await saveBook({...books.get(id), status:k, updatedAt:Date.now()}); toast(`${b.title}: ${STATUS[k]}`); }
   });
 }
