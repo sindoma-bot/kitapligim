@@ -307,6 +307,7 @@ function render(){
   $("#selbar").hidden = !ui.select;
   $("#fabScan").hidden = ui.select;
   $("#selCount").textContent = `${ui.selected.size} seçili`;
+  { const v = [...books.values()].filter(b=>inShelf(b,ui.shelf) && matches(b)); $("#selAll").textContent = v.length && v.every(b=>ui.selected.has(b.id)) ? "Seçimi kaldır" : "Tümünü seç"; }
   $("#selShelf").innerHTML = sl.length ? sl.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("") : `<option value="">Önce raf oluştur</option>`;
   for (const b of ["#selApply","#selUnshelf","#selDelete"]) $(b).disabled = !ui.selected.size || (b!=="#selDelete" && !sl.length);
 }
@@ -343,6 +344,12 @@ $("#grid").addEventListener("click", e=>{
   else openBook(id);
 });
 $("#selApply").addEventListener("click", ()=>bulkShelf(true));
+$("#selAll").addEventListener("click", ()=>{
+  const view = [...books.values()].filter(b=>inShelf(b,ui.shelf) && matches(b));
+  const all = view.length && view.every(b=>ui.selected.has(b.id));
+  for (const b of view) all ? ui.selected.delete(b.id) : ui.selected.add(b.id);
+  render();
+});
 $("#selUnshelf").addEventListener("click", ()=>bulkShelf(false));
 armable($("#selDelete"), "Sil", "Emin misin? Sil", async ()=>{
   const n = ui.selected.size; await deleteBooks([...ui.selected]); toast(`${n} kitap silindi`);
@@ -782,7 +789,7 @@ function parseCsv(text){
   return rows.filter(r=>r.some(c=>c.trim()));
 }
 const ALIAS = {
-  title:["başlık","baslik","kitap adı","kitap adi","kitap","ad","adı","ürün adı","urun adi","title","name","eser","eser adı"],
+  title:["başlık","baslik","kitap adı","kitap adi","kitabın adı","kitabın ismi","kitap ismi","kitap i̇smi","isim","i̇sim","kitap","ad","adı","başlığı","ürün adı","urun adi","title","name","eser","eser adı"],
   author:["yazar","yazarlar","author","authors","yazar adı"],
   publisher:["yayınevi","yayinevi","yayın evi","publisher"],
   translator:["çevirmen","cevirmen","translator","çeviri"],
@@ -797,17 +804,56 @@ const ALIAS = {
   note:["not","notlar","notlarım","note","notes","açıklama"],
   addedAt:["eklenme tarihi","eklenme","date added"]
 };
+const FIELD_LABELS = [["title","Kitap adı"],["author","Yazar"],["publisher","Yayınevi"],["translator","Çevirmen"],["year","Yıl"],["pages","Sayfa"],["isbn","ISBN"],["shelves","Raf"],["status","Durum"],["rating","Puan"],["note","Not"],["loanTo","Ödünç verilen"],["loanDate","Ödünç tarihi"],["addedAt","Eklenme tarihi"]];
 $("#csvInput").addEventListener("change", async e=>{
   const file = e.target.files[0]; e.target.value=""; if(!file) return;
   let text = await file.text();
   if (text.includes("�")) { try{ text = new TextDecoder("windows-1254").decode(await file.arrayBuffer()); }catch{} }
   const rows = parseCsv(text);
   if (!rows.length){ toast("Dosyada satır bulunamadı"); return; }
-  const headRow = rows[0].map(h=>low(h).trim());
+  const norm = h => low(h).replace(/[\s_\-.:]+/g," ").trim();
+  const headRow = rows[0].map(norm);
   const map = {};
-  for (const [k,al] of Object.entries(ALIAS)){ const i = headRow.findIndex(h=>al.includes(h)); if(i>=0) map[k]=i; }
-  let body = rows.slice(1);
-  if (map.title===undefined){ map.title=0; if(map.author===undefined && headRow.length>1) map.author=1; body = rows; }
+  for (const [k,al] of Object.entries(ALIAS)){
+    let i = headRow.findIndex(h=>al.includes(h));
+    if (i<0) i = headRow.findIndex(h=>h && al.some(a=>a.length>3 && h.includes(a)) && !Object.values(map).includes(headRow.indexOf(h)));
+    if (i>=0 && !Object.values(map).includes(i)) map[k]=i;
+  }
+  const hasHeader = Object.keys(map).length >= 1;
+  openImportMapping(rows, hasHeader, map);
+});
+
+function openImportMapping(rows, hasHeader, map){
+  const ncol = Math.max(...rows.slice(0, 50).map(r=>r.length));
+  let header = hasHeader;
+  const sample = () => rows[header ? 1 : 0] || [];
+  const colName = i => header ? (rows[0][i] || `Sütun ${i+1}`) : `Sütun ${i+1}`;
+  const sh = openSheet(`${head("CSV içe aktar")}
+    <div class="form">
+      <p class="meta" style="margin:0">Her bilginin hangi sütunda olduğunu kontrol et. Sağdaki gri yazı ilk kitabın değeri.</p>
+      <label class="switch"><input type="checkbox" id="hasHead" ${header?"checked":""}> İlk satır sütun adları</label>
+      <div id="mapRows" class="form" style="gap:8px"></div>
+      <div class="foot"><button class="btn" data-close type="button">Vazgeç</button><button class="btn primary" id="doImp" type="button"></button></div>
+    </div>`);
+  const draw = () => {
+    const smp = sample();
+    sh.querySelector("#mapRows").innerHTML = FIELD_LABELS.map(([k,label])=>`
+      <label class="f">${label}
+        <select data-k="${k}"><option value="">—</option>${Array.from({length:ncol},(_,i)=>`<option value="${i}" ${map[k]===i?"selected":""}>${esc(colName(i))}${smp[i]?` · ${esc(String(smp[i]).slice(0,40))}`:""}</option>`).join("")}</select>
+      </label>`).join("");
+    sh.querySelector("#doImp").textContent = `${rows.length - (header?1:0)} satırı içe aktar`;
+  };
+  draw();
+  sh.querySelector("#hasHead").addEventListener("change", e=>{ header = e.target.checked; draw(); });
+  sh.querySelector("#mapRows").addEventListener("change", e=>{ const sel=e.target.closest("select"); if(!sel) return; if (sel.value==="") delete map[sel.dataset.k]; else map[sel.dataset.k] = +sel.value; });
+  sh.querySelector("#doImp").addEventListener("click", async ()=>{
+    if (map.title===undefined){ toast("Kitap adı sütununu seç"); return; }
+    closeSheet();
+    await importRows(header ? rows.slice(1) : rows, map);
+  });
+}
+
+async function importRows(body, map){
   const exist = new Set([...books.values()].map(b=>low(b.title)+"|"+low(b.author)));
   const existIsbn = new Set([...books.values()].map(b=>b.isbn).filter(Boolean));
   const statusOf = s => { s=low(s); if(/okunacak|unread/.test(s)) return "unread"; if(/okunuyor|reading/.test(s)) return "reading"; if(/okundu|read|bitti|evet/.test(s)) return "read"; return "unread"; };
@@ -836,11 +882,9 @@ $("#csvInput").addEventListener("change", async e=>{
     if (newShelves.size) await putRecords("shelves", [...newShelves.values()]);
     await putRecords("books", newBooks);
     render();
-    const txt = `${newBooks.length} kitap içe aktarıldı${skipped?`, ${skipped} satır atlandı (boş ya da zaten var)`:""}.`;
-    const it = document.querySelector("#impText"); if (it){ document.querySelector("#impProg").hidden=false; document.querySelector("#impProg i").style.width="100%"; it.textContent = txt + (newBooks.length ? " Kapakları bulmak için “Eksikleri internetten bul”a dokun." : ""); }
-    toast(txt, 4000);
-  } catch { toast("İçe aktarılamadı: telefonda yer kalmamış olabilir."); }
-});
+    toast(`${newBooks.length} kitap içe aktarıldı${skipped?`, ${skipped} satır atlandı (boş ya da zaten var)`:""}. Kapaklar için Ayarlar → “Eksikleri internetten bul”.`, 6000);
+  } catch { toast("İçe aktarılamadı: yer kalmamış olabilir."); }
+}
 
 /* ---------- full backup (JSON with photos) ---------- */
 const blobToDataUrl = blob => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(blob); });
