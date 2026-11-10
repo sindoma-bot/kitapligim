@@ -272,3 +272,55 @@ def yazar_bild(url: str) -> bytes | None:
     if body.startswith(b"\xff\xd8\xff") or body.startswith(b"\x89PNG") or body.startswith(b"RIFF"):
         return body
     return None
+
+
+# ---------------------------------------------------------------- Buchdaten zur ISBN
+
+def isbn_bilgi(isbn: str, google_key: str = "") -> tuple[dict | None, list[str]]:
+    """Buchdaten zur ISBN: Google Books (mit Schlüssel der NAS), ergänzt durch Open Library."""
+    fehler: list[str] = []
+    g = o = None
+    url = "https://www.googleapis.com/books/v1/volumes?maxResults=1&q=isbn:" + isbn
+    if google_key:
+        url += "&key=" + urllib.parse.quote(google_key)
+    try:
+        status, body, _ = _get(url, accept="application/json")
+        if status == 200:
+            items = json.loads(body or b"{}").get("items") or []
+            if items:
+                v = items[0].get("volumeInfo") or {}
+                links = v.get("imageLinks") or {}
+                g = {"title": ": ".join(x for x in (v.get("title"), v.get("subtitle")) if x),
+                     "author": ", ".join(v.get("authors") or []), "publisher": v.get("publisher") or "",
+                     "year": (v.get("publishedDate") or "")[:4], "pages": str(v.get("pageCount") or ""),
+                     "language": {"tr": "Türkçe", "en": "İngilizce", "de": "Almanca", "fr": "Fransızca"}.get(v.get("language") or "", ""),
+                     "about": v.get("description") or "",
+                     "coverUrl": (links.get("thumbnail") or links.get("smallThumbnail") or "").replace("http://", "https://").replace("&edge=curl", ""),
+                     "source": "Google Books"}
+        else:
+            fehler.append(f"Google Books HTTP {status}")
+    except Exception as e:
+        fehler.append(f"Google Books: {type(e).__name__}")
+    if not g or not g.get("author") or not g.get("coverUrl"):
+        try:
+            status, body, _ = _get(f"https://openlibrary.org/api/books?bibkeys=ISBN:{isbn}&format=json&jscmd=data", accept="application/json")
+            if status == 200:
+                d = json.loads(body or b"{}").get("ISBN:" + isbn)
+                if d:
+                    o = {"title": ": ".join(x for x in (d.get("title"), d.get("subtitle")) if x),
+                         "author": ", ".join(a.get("name", "") for a in d.get("authors") or []),
+                         "publisher": ", ".join(p.get("name", "") for p in d.get("publishers") or []),
+                         "year": (re.search(r"\d{4}", d.get("publish_date") or "") or [""])[0] if re.search(r"\d{4}", d.get("publish_date") or "") else "",
+                         "pages": str(d.get("number_of_pages") or ""),
+                         "coverUrl": ((d.get("cover") or {}).get("medium") or (d.get("cover") or {}).get("large") or ""),
+                         "source": "Open Library"}
+            else:
+                fehler.append(f"Open Library HTTP {status}")
+        except Exception as e:
+            fehler.append(f"Open Library: {type(e).__name__}")
+    if not g and not o:
+        return None, fehler
+    out = dict(o or {})
+    out.update({k: v for k, v in (g or {}).items() if v})
+    out["isbn"] = isbn
+    return out, fehler

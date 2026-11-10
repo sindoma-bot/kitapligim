@@ -40,6 +40,7 @@ const Sync = (() => {
       st.enabled = !!(j && j.app === "kitapligim");
       if (st.enabled) try { localStorage.setItem("kitaplik-server","1"); } catch {}
     } catch { st.enabled = remembered; }
+    Lookup.setNas(st.enabled);
     return st.enabled;
   }
 
@@ -769,7 +770,7 @@ function openBook(id, prefill, fromDetail){
   if (rm) rm.addEventListener("click", ()=>{ b._removePhoto = true; b.coverUrl=""; if (pendingPhoto){URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null;} const keep=b.photoId; b.photoId=null; preview(); b._oldPhoto=keep; rm.remove(); });
 
   const fill = (info, overwrite) => {
-    for (const k of ["title","author","publisher","year","pages"]) if (info[k] && (overwrite || !f(k).value.trim())) f(k).value = info[k];
+    for (const k of ["title","author","publisher","year","pages","language","about"]) if (info[k] && f(k) && (overwrite || !f(k).value.trim())) f(k).value = info[k];
     if (info.isbn) f("isbn").value = info.isbn;
     if (info.coverUrl && !b.photoId && !pendingPhoto) { b.coverUrl = info.coverUrl; preview(); }
   };
@@ -782,7 +783,7 @@ function openBook(id, prefill, fromDetail){
     try {
       const info = await Lookup.byIsbn(isbn);
       if (info) { fill(info, !f("title").value.trim()); toast(`Bilgiler ${info.source} kaynağından geldi`); }
-      else toast("Bu ISBN için kayıt bulunamadı. Bilgileri elle yazabilirsin.", 3800);
+      else toast(Lookup.errors().some(e=>e.includes("429")) ? "Bulunamadı: Google'ın günlük sorgu hakkı dolmuş (yarın sabah tekrar dene). Bilgileri elle yazabilirsin." : "Bu ISBN için kayıt bulunamadı. Bilgileri elle yazabilirsin.", 4500);
     } catch { toast("İnternete bağlanılamadı."); }
     btn.disabled = false; btn.textContent = "Bilgileri getir";
   });

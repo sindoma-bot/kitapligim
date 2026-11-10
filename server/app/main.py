@@ -40,7 +40,7 @@ BILDTYPEN = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "i
 
 
 def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None, kapak_suche=None,
-                 yazar_suche=None, yazar_bild=None) -> FastAPI:
+                 yazar_suche=None, yazar_bild=None, isbn_suche=None) -> FastAPI:
     env = dict(os.environ) if env is None else env
     data = Path(data_dir or env.get("DATA_DIR") or "/data")
     web = Path(web_dir or env.get("WEB_DIR") or Path(__file__).resolve().parents[2]).resolve()
@@ -69,6 +69,7 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
     kapak_suche = kapak_suche or kp.suche
     yazar_suche = yazar_suche or kp.vikipedi
     yazar_bild = yazar_bild or kp.yazar_bild
+    isbn_suche = isbn_suche or kp.isbn_bilgi
 
     app = FastAPI(title="Kitaplığım", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -217,6 +218,14 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
         fid = "nas-" + secrets.token_hex(12)
         foto_pfad(fid).write_bytes(ergebnis["bild"])
         return no_store({"photoId": fid, "quelle": ergebnis["quelle"], "fehler": ergebnis["fehler"]})
+
+    @app.get("/api/isbn")
+    async def isbn_holen(isbn: str = "", _a: bool = Depends(angemeldet)):
+        isbn = re.sub(r"[^0-9Xx]", "", isbn).upper()[:13]
+        if len(isbn) not in (10, 13):
+            raise HTTPException(400, "Geçersiz ISBN.")
+        info, fehler = await run_in_threadpool(isbn_suche, isbn, google_key)
+        return no_store({"info": info, "fehler": fehler})
 
     # ---------------------------------------------------------------- Autoren-Kurzbiografie
 

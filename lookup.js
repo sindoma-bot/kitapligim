@@ -68,10 +68,27 @@ const Lookup = (() => {
     };
   }
 
+  /* On the NAS the lookup runs on the server with its own Google key (the keyless quota is often used up). */
+  let useNas = false;
+  let lastErrors = [];
+  async function byIsbnNas(isbn) {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 20000);
+    try {
+      const r = await fetch(`api/isbn?isbn=${isbn}`, { credentials: "same-origin", cache: "no-store", signal: ctl.signal });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const j = await r.json(); lastErrors = j.fehler || [];
+      return j.info || null;
+    } finally { clearTimeout(t); }
+  }
+
   /* Look up one ISBN. Resolves a partial book or null. Rejects only when offline/unreachable. */
   async function byIsbn(raw) {
     const isbn = cleanIsbn(raw);
     if (!isbn) return null;
+    lastErrors = [];
+    if (useNas) {
+      try { const n = await byIsbnNas(isbn); if (n) return n; } catch {}
+    }
     let g = null, o = null, failures = 0;
     try { g = await byIsbnGoogle(isbn); } catch { failures++; }
     if (!g || !g.coverUrl || !g.author) {
@@ -92,5 +109,5 @@ const Lookup = (() => {
     return (j.items || []).map(fromGoogle);
   }
 
-  return { byIsbn, search, cleanIsbn, isValidIsbn };
+  return { byIsbn, search, cleanIsbn, isValidIsbn, setNas: v => { useNas = !!v; }, errors: () => lastErrors };
 })();

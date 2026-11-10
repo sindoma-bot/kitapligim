@@ -239,3 +239,22 @@ def test_author_photo_retry_and_own_photo(tmp_path, web):
     r = c.put("/api/yazar", json={"ad": "Ali Veli", "photoId": "eigen-123456"}).json()
     assert r["photoId"] == "eigen-123456" and r["bio"] == "Bio."
     assert c.put("/api/yazar", json={"ad": "Ali Veli", "photoId": "gibts-nicht-1"}).status_code == 400
+
+
+def test_isbn_lookup(tmp_path, web, monkeypatch):
+    import json as _j
+    from app import kapak
+    def fake_get(url, **kw):
+        if "googleapis" in url:
+            assert "key=K" in url
+            return 200, _j.dumps({"items": [{"volumeInfo": {"title": "Peygamber Torununa Mektuplar", "authors": ["Murat Bardakçı"],
+                                                             "publisher": "Turkuvaz Kitap", "publishedDate": "2023-05", "language": "tr"}}]}).encode(), ""
+        return 404, b"", ""
+    monkeypatch.setattr(kapak, "_get", fake_get)
+    c = TestClient(erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": hashlib.sha256(PW.encode()).hexdigest(), "GOOGLE_BOOKS_KEY": "K"}))
+    assert c.get("/api/isbn?isbn=9786256548596").status_code == 401
+    login(c)
+    r = c.get("/api/isbn?isbn=978-6256548596").json()
+    assert r["info"]["author"] == "Murat Bardakçı" and r["info"]["year"] == "2023" and r["info"]["language"] == "Türkçe"
+    assert r["fehler"] == ["Open Library HTTP 404"]
+    assert c.get("/api/isbn?isbn=12").status_code == 400
