@@ -53,6 +53,16 @@ Danach: auf dem iPhone in Safari `https://bakkoz.synology.me:8444` öffnen, anme
 
 Nach 8 falschen Passwörtern sperrt der Server die Anmeldung für 15 Minuten.
 
+## Cover-Suche
+
+„Eksikleri internetten bul“ sucht auf der NAS nacheinander bei Kitapyurdu (Titel + Autor), Google Books und
+Open Library und speichert das gefundene Bild in `data/fotos`. Kitapyurdu wird höchstens einmal pro Sekunde
+abgefragt; 557 Bücher dauern also etwa 10 Minuten. Am Ende zeigt die App, welche Quelle Fehler gemeldet hat.
+
+Google Books ohne Schlüssel antwortet oft mit „HTTP 429“. Optional einen kostenlosen API-Schlüssel anlegen
+(console.cloud.google.com → APIs → „Books API“ aktivieren → Anmeldedaten → API-Schlüssel) und in
+`kitapligim.env` als `GOOGLE_BOOKS_KEY=` eintragen, dann Projekt stoppen und neu erstellen.
+
 ## 4. Datensicherung
 
 Alles liegt in `docker/kitapligim/data`:

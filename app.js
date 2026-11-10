@@ -519,6 +519,17 @@ function openBook(id, prefill){
   sh.querySelector("#findCover").addEventListener("click", async e=>{
     const title = f("title").value.trim(); if (!title){ toast("Önce kitap adını yaz"); f("title").focus(); return; }
     const box = sh.querySelector("#coverResults"); box.hidden=false; box.innerHTML = `<span class="meta">Kapaklar aranıyor…</span>`;
+    if (Sync.enabled) {
+      const r = await nasCover({title, author: f("author").value.trim(), isbn: Lookup.cleanIsbn(f("isbn").value)});
+      if (r.photoId) {
+        if (pendingPhoto){URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null;}
+        if (b.photoId) b._oldPhoto = b.photoId;
+        b.photoId = r.photoId; b.coverUrl = ""; preview();
+        box.innerHTML = `<span class="meta">Kapak ${esc(r.quelle)} kaynağından bulundu. Yanlışsa mağaza bağlantısıyla değiştirebilirsin. Kaydetmeyi unutma.</span>`;
+        return;
+      }
+      box.innerHTML = `<span class="meta">NAS'ta kapak bulunamadı${r.error?` (${esc(r.error)})`:(r.fehler&&r.fehler.length?` (${esc(r.fehler.join(", "))})`:"")}. Google'da aranıyor…</span>`;
+    }
     try {
       const res = (await Lookup.search(title, f("author").value.trim(), 12)).filter(r=>r.coverUrl);
       if (!res.length){ box.innerHTML = `<span class="meta">Kapak bulunamadı. Fotoğrafını çekebilirsin.</span>`; return; }
@@ -753,6 +764,23 @@ async function fillMissing(btn, sh){
   const bar = prog.querySelector("i"), txt = sh.querySelector("#fillText");
   const todo = [...books.values()].filter(b=>(!b.photoId && !b.coverUrl) || (b.isbn && (!b.author || b.needsInfo)));
   let found = 0, i = 0;
+  if (Sync.enabled) {
+    // Search on the NAS: Kitapyurdu, Google Books, Open Library; the image is stored on the NAS.
+    const errs = new Map(); let fails = 0;
+    for (const b of todo.filter(b=>!b.photoId && !b.coverUrl)){
+      if (!document.body.contains(btn)) break;
+      i++; bar.style.width = (100*i/todo.length)+"%";
+      txt.textContent = `${i} / ${todo.length} · ${found} kapak bulundu${errs.size?` · sorunlar: ${[...errs.keys()].join(", ")}`:""}`;
+      const r = await nasCover(b);
+      if (r.error) { if (++fails >= 5) { txt.textContent = `Durdu: ${r.error}`; btn.disabled = false; return; } continue; }
+      fails = 0;
+      for (const e of r.fehler || []) errs.set(e, (errs.get(e)||0)+1);
+      if (r.photoId) { const cur = books.get(b.id); if (cur) { await saveBook({...cur, photoId: r.photoId, coverUrl: ""}); found++; } }
+    }
+    txt.textContent = `Bitti: ${found} kapak bulundu.${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
+    btn.disabled = false;
+    return;
+  }
   for (const b of todo){
     if (!document.body.contains(btn)) break; // sheet closed
     i++; bar.style.width = (100*i/todo.length)+"%"; txt.textContent = `${i} / ${todo.length} · ${found} kitap tamamlandı`;
@@ -774,11 +802,21 @@ async function fillMissing(btn, sh){
         nb.needsInfo = false;
         await saveBook(nb); found++;
       }
-    } catch { txt.textContent = "İnternet bağlantısı kesildi. Daha sonra tekrar dene."; break; }
+    } catch (e) { txt.textContent = `Arama durdu: ${e && e.message || "bağlantı yok"}. Daha sonra tekrar dene.`; btn.disabled = false; return; }
     await sleep(250);
   }
   txt.textContent = `Bitti: ${found} kitap internetten tamamlandı.`;
   btn.disabled = false;
+}
+
+async function nasCover(b){
+  try {
+    const r = await fetch("api/kapak", {method:"POST", credentials:"same-origin", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({title: b.title, author: b.author, isbn: b.isbn})});
+    if (r.status === 401) { showLogin(); return {error: "NAS girişi gerekli"}; }
+    if (!r.ok) return {error: `NAS HTTP ${r.status}`};
+    return await r.json();
+  } catch { return {error: "NAS'a ulaşılamıyor"}; }
 }
 
 /* ---------- CSV ---------- */

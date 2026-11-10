@@ -120,3 +120,33 @@ def test_logout(client):
 def test_backup_created(tmp_path, web):
     erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": "x"})
     assert list((tmp_path / "d" / "sicherung").glob("kitapligim-*.db"))
+
+
+def test_cover_search(tmp_path, web):
+    calls = []
+    def fake(titel, autor, isbn, key):
+        calls.append((titel, autor, isbn))
+        if titel == "Efendi":
+            return {"bild": b"\xff\xd8\xff" + b"1" * 2000, "quelle": "Kitapyurdu", "fehler": []}
+        return {"bild": None, "quelle": None, "fehler": ["Google Books HTTP 429"]}
+    c = TestClient(erstelle_app(str(tmp_path / "d"), str(web), {"PW_HASH": hashlib.sha256(PW.encode()).hexdigest()}, kapak_suche=fake))
+    assert c.post("/api/kapak", json={"title": "Efendi"}).status_code == 401
+    login(c)
+    r = c.post("/api/kapak", json={"title": "Efendi", "author": "Soner Yalçın"}).json()
+    assert r["quelle"] == "Kitapyurdu" and r["photoId"].startswith("nas-")
+    assert c.get("/api/fotos/" + r["photoId"]).headers["content-type"] == "image/jpeg"
+    r2 = c.post("/api/kapak", json={"title": "Yok"}).json()
+    assert r2["photoId"] is None and r2["fehler"] == ["Google Books HTTP 429"]
+    assert c.post("/api/kapak", json={}).status_code == 400
+
+
+def test_kitapyurdu_parsing(monkeypatch):
+    from app import kapak
+    page = ('<div class="product-cr"><div class="image"><a href="x"><img src="https://img.kitapyurdu.com/v1/getImage/fn:111/wh:true/wi:220" '
+            'alt="Başka Kitap"></a></div></div></div>'
+            '<div class="product-cr"><div class="image"><a href="y"><img src="https://img.kitapyurdu.com/v1/getImage/fn:222/wh:true/wi:220" '
+            'alt="Efendi 2"></a></div></div></div>')
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (200, page.encode(), "text/html"))
+    monkeypatch.setattr(kapak, "_warte", lambda *a: None)
+    url, err = kapak.kitapyurdu("Efendi", "Soner Yalçın")
+    assert err is None and url == "https://img.kitapyurdu.com/v1/getImage/fn:222/wh:true/wi:500"

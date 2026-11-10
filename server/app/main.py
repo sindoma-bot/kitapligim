@@ -9,6 +9,7 @@ Einstellungen über Umgebungsvariablen (docker-compose.yml, kitapligim.env):
   WEB_DIR         Ordner mit der Oberfläche (index.html, app.js ...), Standard /app/web
   PW_HASH         SHA-256 des Passworts (Kleinbuchstaben, hex)
   SITZUNG_TAGE    wie lange man auf einem Gerät angemeldet bleibt, Standard 365
+  GOOGLE_BOOKS_KEY  optionaler API-Schlüssel für Google Books (Cover-Suche)
   SICHERUNG_TAGE  wie viele Tageskopien der Datenbank in DATA_DIR/sicherung bleiben, Standard 60
 """
 
@@ -26,6 +27,9 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 
+from starlette.concurrency import run_in_threadpool
+
+from . import kapak as kp
 from .db import ARTEN, Datenbank
 
 COOKIE = "kitapligim_sitzung"
@@ -35,7 +39,7 @@ FOTO_ID = re.compile(r"^[A-Za-z0-9_-]{6,80}$")
 BILDTYPEN = {b"\xff\xd8\xff": "image/jpeg", b"\x89PNG": "image/png", b"RIFF": "image/webp"}
 
 
-def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None) -> FastAPI:
+def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: dict | None = None, kapak_suche=None) -> FastAPI:
     env = dict(os.environ) if env is None else env
     data = Path(data_dir or env.get("DATA_DIR") or "/data")
     web = Path(web_dir or env.get("WEB_DIR") or Path(__file__).resolve().parents[2]).resolve()
@@ -61,6 +65,7 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
     pw_hash = (env.get("PW_HASH") or "").strip().lower()
     sitzung_sek = float(env.get("SITZUNG_TAGE") or 365) * 86400
     fehlversuche: dict[str, list[float]] = defaultdict(list)
+    kapak_suche = kapak_suche or kp.suche
 
     app = FastAPI(title="Kitaplığım", docs_url=None, redoc_url=None, openapi_url=None)
 
@@ -187,6 +192,28 @@ def erstelle_app(data_dir: str | None = None, web_dir: str | None = None, env: d
             raise HTTPException(409, "Fotoğraf hâlâ bir kitapta kullanılıyor.")
         p.unlink(missing_ok=True)
         return no_store({"ok": True})
+
+    # ---------------------------------------------------------------- Cover-Suche
+
+    google_key = (env.get("GOOGLE_BOOKS_KEY") or "").strip()
+
+    @app.post("/api/kapak")
+    async def kapak_suchen(request: Request, _a: bool = Depends(angemeldet)):
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        titel = str(body.get("title") or "").strip()[:200]
+        autor = str(body.get("author") or "").strip()[:200]
+        isbn = re.sub(r"[^0-9Xx]", "", str(body.get("isbn") or ""))[:13]
+        if not titel and not isbn:
+            raise HTTPException(400, "Kitap adı gerekli.")
+        ergebnis = await run_in_threadpool(kapak_suche, titel, autor, isbn, google_key)
+        if not ergebnis["bild"]:
+            return no_store({"photoId": None, "quelle": None, "fehler": ergebnis["fehler"]})
+        fid = "nas-" + secrets.token_hex(12)
+        foto_pfad(fid).write_bytes(ergebnis["bild"])
+        return no_store({"photoId": fid, "quelle": ergebnis["quelle"], "fehler": ergebnis["fehler"]})
 
     # ---------------------------------------------------------------- Oberfläche
 
