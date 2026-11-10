@@ -20,7 +20,7 @@ import urllib.request
 
 UA = "Mozilla/5.0 (Kitapligim; private Buchsammlung)"
 _lock = threading.Lock()
-_letzter = {"kitapyurdu": 0.0}
+_letzter = {"kitapyurdu": 0.0, "idefix": 0.0}
 
 KY_IMG = re.compile(r'https://img\.kitapyurdu\.com/v1/getImage/fn:\d+[^"\'\s<>]*')
 KY_PRODUKT = re.compile(r'<div[^>]+class="[^"]*product-cr[^"]*"[^>]*>(.*?)</div>\s*</div>\s*</div>', re.S)
@@ -77,6 +77,26 @@ def kitapyurdu(titel: str, autor: str) -> tuple[str | None, str | None]:
     if bild:
         return _gross(html.unescape(bild.group(0))), None
     return None, None
+
+
+IDEFIX_IMG = re.compile(
+    r'https://[a-z0-9.-]*(?:akinoncdn\.com|idefix\.com)/products/[^"\'\s<>\\)]+?\.(?:jpe?g|png|webp)', re.I)
+
+
+def idefix(titel: str, autor: str) -> tuple[str | None, str | None]:
+    """Erstes Produktbild der idefix-Suche (Titel + Autor). Höchstens eine Abfrage pro Sekunde."""
+    q = " ".join(x for x in (titel, autor.split(",")[0] if autor else "") if x).strip()
+    if not q:
+        return None, None
+    _warte("idefix", 1.0)
+    status, body, _ = _get("https://www.idefix.com/search?q=" + urllib.parse.quote(q), accept="text/html")
+    if status != 200:
+        return None, f"idefix HTTP {status}"
+    seite = body.decode("utf-8", "replace").replace("\\u002F", "/").replace("\\/", "/")
+    bild = IDEFIX_IMG.search(seite)
+    if not bild:
+        return None, "idefix: kein Produktbild erkannt"
+    return html.unescape(bild.group(0)), None
 
 
 def google(titel: str, autor: str, isbn: str, key: str) -> tuple[str | None, str | None]:
@@ -137,6 +157,7 @@ def suche(titel: str, autor: str, isbn: str, google_key: str = "") -> dict:
         # zweiter Versuch: nur Titel (Autor oft anders geschrieben, z. B. "Prof.Dr." oder zwei Autoren)
         ("Google Books", lambda: google(titel, "", "", google_key) if autor and not isbn else (None, None)),
         ("Open Library", lambda: openlibrary(titel, autor, isbn)),
+        ("idefix", lambda: idefix(titel, autor)),
     ):
         try:
             url, err = f()

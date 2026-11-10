@@ -776,9 +776,10 @@ async function fillMissing(btn, sh){
       if (r.error) { if (++fails >= 5) { txt.textContent = `Durdu: ${r.error}`; btn.disabled = false; return; } continue; }
       fails = 0;
       for (const e of r.fehler || []) errs.set(e, (errs.get(e)||0)+1);
-      if (r.photoId) { const cur = books.get(b.id); if (cur) { await saveBook({...cur, photoId: r.photoId, coverUrl: ""}); found++; } }
+      if (r.photoId) { const cur = books.get(b.id); if (cur) { await saveBook({...cur, photoId: r.photoId, coverUrl: "", coverSource: r.quelle}); found++; } }
     }
-    txt.textContent = `Bitti: ${found} kapak bulundu.${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
+    const fromIdefix = [...books.values()].filter(x=>x.coverSource==="idefix").length;
+    txt.textContent = `Bitti: ${found} kapak bulundu.${fromIdefix?` idefix'ten gelen kapakları (${fromIdefix}) bir göz at, ilk sonuç her zaman doğru kitap olmayabilir.`:""}${errs.size?` Sorunlar: ${[...errs].map(([k,v])=>`${k} (${v}×)`).join(", ")}`:""}`;
     btn.disabled = false;
     return;
   }

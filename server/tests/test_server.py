@@ -161,3 +161,15 @@ def test_openlibrary_requires_matching_title(monkeypatch):
     assert url.endswith("/b/id/2-L.jpg")
     url, _ = kapak.openlibrary("Yok Böyle Kitap", "", "")
     assert url is None
+
+
+def test_idefix_parsing(monkeypatch):
+    from app import kapak
+    page = ('<img src="https://www.idefix.com/logo.png">'
+            '{"image":"https:\\/\\/idefix.akinoncdn.com\\/products\\/2023\\/01\\/02\\/123\\/abc-original.jpg"}')
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (200, page.encode(), "text/html"))
+    monkeypatch.setattr(kapak, "_warte", lambda *a: None)
+    url, err = kapak.idefix("Efendi", "Soner Yalçın")
+    assert err is None and url == "https://idefix.akinoncdn.com/products/2023/01/02/123/abc-original.jpg"
+    monkeypatch.setattr(kapak, "_get", lambda url, **kw: (403, b"", ""))
+    assert kapak.idefix("Efendi", "") == (None, "idefix HTTP 403")
