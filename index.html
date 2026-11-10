@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kitaplığım</title>
+<meta name="description" content="Kişisel kitap kataloğu: raflar, notlar, barkodla ekleme, ödünç takibi.">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a211e" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Kitaplığım">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <div class="titlebar">
+      <div>
+        <h1>Kitaplığım</h1>
+        <div class="count" id="countline">Kitaplar yükleniyor…</div>
+      </div>
+      <button class="iconbtn" id="btnSettings" aria-label="Ayarlar ve yedekleme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      </button>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="btnAdd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Kitap ekle</button>
+      <button class="btn" id="btnSearch" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Ara</button>
+      <button class="btn" id="btnSelect" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Seç</button>
+      <label class="btn" for="sortSel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></svg>
+        <select id="sortSel" style="border:0;background:none;padding:0;font-weight:500" aria-label="Sırala">
+          <option value="title">Başlık A–Z</option>
+          <option value="author">Yazar A–Z</option>
+          <option value="added">Son eklenen</option>
+          <option value="year">Yayın yılı</option>
+          <option value="rating">Puan</option>
+        </select>
+      </label>
+    </div>
+    <div class="search" id="searchRow" hidden>
+      <input id="q" type="search" placeholder="Başlık, yazar, yayınevi, ISBN veya notlarda ara" autocomplete="off" enterkeyhint="search">
+    </div>
+    <div class="chips" id="chips" role="toolbar" aria-label="Raflar"></div>
+    <div class="statusrow" id="statusRow" role="toolbar" aria-label="Okuma durumu"></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <div id="sampleBanner" class="banner" hidden>
+    <span>Gördüğün kitaplar örnek. Kendi kitaplarını ekleyince bunları silebilirsin.</span>
+    <button class="btn" id="btnClearSamples">Örnekleri sil</button>
+  </div>
+  <div id="installHint" class="banner" hidden></div>
+  <div id="grid" class="grid" aria-live="polite"></div>
+  <div id="empty" class="empty" hidden></div>
+</main>
+
+<button class="fab" id="fabScan" aria-label="Barkod okut">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M7 8v8M10 8v8M13 8v8M16.5 8v8"/></svg>
+</button>
+
+<div class="selbar" id="selbar" hidden>
+  <div class="wrap">
+    <strong id="selCount">0 seçili</strong>
+    <select id="selShelf" aria-label="Raf seç"></select>
+    <button class="btn" id="selApply">Rafa ekle</button>
+    <button class="btn" id="selUnshelf">Raftan çıkar</button>
+    <button class="btn danger" id="selDelete">Sil</button>
+  </div>
+</div>
+
+<div id="sheetRoot"></div>
+<input type="file" id="photoInput" accept="image/*" capture="environment" class="sr" tabindex="-1">
+<input type="file" id="photoInputLib" accept="image/*" class="sr" tabindex="-1">
+<input type="file" id="csvInput" accept=".csv,text/csv,text/plain" class="sr" tabindex="-1">
+<input type="file" id="jsonInput" accept=".json,application/json" class="sr" tabindex="-1">
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="store.js"></script>
+<script src="lookup.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
