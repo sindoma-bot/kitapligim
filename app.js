@@ -197,10 +197,14 @@ let photoIO = null;
 function hydrateLazy(root){
   if (!("IntersectionObserver" in window)) return hydratePhotos(root);
   if (!photoIO) photoIO = new IntersectionObserver(entries=>{
-    for (const e of entries) if (e.isIntersecting) { photoIO.unobserve(e.target); loadPhoto(e.target); }
+    for (const e of entries) if (e.isIntersecting) {
+      photoIO.unobserve(e.target);
+      const img = e.target.querySelector("img[data-photo]"); if (img) loadPhoto(img);
+    }
   }, {rootMargin: "800px 0px"});
   photoIO.disconnect();
-  for (const img of root.querySelectorAll("img[data-photo]")) photoIO.observe(img);
+  // The img itself is hidden (display:none) until loaded, and hidden elements never intersect, so watch its visible box.
+  for (const img of root.querySelectorAll("img[data-photo]")) photoIO.observe(img.parentElement);
 }
 async function hydratePhotos(root){
   for (const img of root.querySelectorAll("img[data-photo]")) await loadPhoto(img);
