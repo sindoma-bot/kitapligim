@@ -768,8 +768,10 @@ function openBook(id, prefill, fromDetail){
         </div>
         <div class="pmeta">
           <div style="font-size:.78rem;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.05em">Raflar</div>
-          <div class="shelfpick" id="shelfpick">
-            ${sl.map(s=>`<label><input type="checkbox" value="${esc(s.id)}" ${(b.shelves||[]).includes(s.id)?"checked":""}>${esc(s.name)}</label>`).join("") || `<span class="meta">Henüz raf yok. Ana ekrandaki “+ Raf ekle” ile oluşturabilirsin.</span>`}
+          <div class="rsel"><div class="rtags" id="rtags"></div>
+            <div class="rpop" id="rpop" hidden><input id="rq" placeholder="Raf ara veya yeni raf yaz…" autocomplete="off"><div class="rlist" id="rlist"></div></div></div>
+          <div id="shelfpick" hidden>
+            ${sl.map(s=>`<input type="checkbox" value="${esc(s.id)}" data-name="${esc(s.name)}" ${(b.shelves||[]).includes(s.id)?"checked":""}>`).join("")}
           </div>
         </div>
       </div>
@@ -822,6 +824,7 @@ function openBook(id, prefill, fromDetail){
   const drawStars = () => sh.querySelector("#stars").innerHTML = [1,2,3,4,5].map(i=>`<button type="button" data-r="${i}" class="${i<=rating?"on":""}" aria-label="${i} yıldız">★</button>`).join("");
   drawStars();
   sh.querySelector("#stars").addEventListener("click", e=>{ const r=e.target.closest("[data-r]"); if(!r) return; rating = (+r.dataset.r===rating)?0:+r.dataset.r; drawStars(); });
+  wireShelfSelect(sh);
   sh.querySelector("#takePhoto").addEventListener("click", ()=>$("#photoInput").click());
   sh.querySelector("#pickPhoto").addEventListener("click", ()=>$("#photoInputLib").click());
   sh._setPhoto = () => { b._removePhoto = false; preview(); };
@@ -1031,6 +1034,44 @@ async function openScanner(opts = {}){
 }
 
 /* ---------- shelves ---------- */
+/* Shelf choice in the edit form: only the chosen shelves as tags, "+ Raf seç" opens a searchable list. */
+function wireShelfSelect(sh){
+  const box = sh.querySelector("#shelfpick"), tags = sh.querySelector("#rtags"), pop = sh.querySelector("#rpop"), q = sh.querySelector("#rq"), list = sh.querySelector("#rlist");
+  const boxes = () => [...box.querySelectorAll("input")];
+  const X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M7 7l10 10M17 7 7 17"/></svg>';
+  const CK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>';
+  const drawTags = () => {
+    tags.innerHTML = boxes().filter(i=>i.checked).map(i=>`<span class="rtag">${esc(i.dataset.name)}<button type="button" data-rm="${esc(i.value)}" aria-label="${esc(i.dataset.name)} rafından çıkar">${X}</button></span>`).join("")
+      + `<button type="button" class="radd" id="radd" aria-expanded="${!pop.hidden}">+ Raf seç</button>`;
+  };
+  const drawList = () => {
+    const t = q.value.trim(), tl = t.toLocaleLowerCase("tr");
+    const hits = boxes().filter(i=>!tl || i.dataset.name.toLocaleLowerCase("tr").includes(tl));
+    list.innerHTML = hits.map(i=>`<button type="button" data-tg="${esc(i.value)}" class="${i.checked?"on":""}">${esc(i.dataset.name)}${i.checked?CK:""}</button>`).join("")
+      + (t && !boxes().some(i=>i.dataset.name.toLocaleLowerCase("tr")===tl) ? `<button type="button" class="rnew" data-new="1">+ “${esc(t)}” rafını oluştur</button>` : "")
+      + (!hits.length && !t ? `<span class="meta">Henüz raf yok. Yukarıya bir ad yaz.</span>` : "");
+  };
+  const open = on => { pop.hidden = !on; drawTags(); if (on) { q.value = ""; drawList(); q.focus({preventScroll:true}); } };
+  tags.addEventListener("click", e=>{
+    const rm = e.target.closest("[data-rm]");
+    if (rm) { const i = boxes().find(x=>x.value===rm.dataset.rm); if (i) i.checked = false; drawTags(); if (!pop.hidden) drawList(); return; }
+    if (e.target.closest("#radd")) open(pop.hidden);
+  });
+  list.addEventListener("click", async e=>{
+    const tg = e.target.closest("[data-tg]");
+    if (tg) { const i = boxes().find(x=>x.value===tg.dataset.tg); i.checked = !i.checked; drawTags(); drawList(); return; }
+    if (e.target.closest("[data-new]")) {
+      const name = q.value.trim(); if (!name) return;
+      const s = shelfByName(name, true); await saveShelf(s);
+      box.insertAdjacentHTML("beforeend", `<input type="checkbox" value="${esc(s.id)}" data-name="${esc(s.name)}" checked>`);
+      q.value = ""; drawTags(); drawList(); toast(`“${name}” rafı oluşturuldu`);
+    }
+  });
+  q.addEventListener("input", drawList);
+  q.addEventListener("keydown", e=>{ if (e.key==="Enter") { e.preventDefault(); list.querySelector("button")?.click(); } if (e.key==="Escape") { e.stopPropagation(); open(false); } });
+  sh.addEventListener("click", e=>{ if (!pop.hidden && !e.composedPath().some(n=>n.classList?.contains("rsel"))) open(false); });
+  drawTags();
+}
 function openShelfSheet(){
   const sh = openSheet(`${head("Yeni raf")}
     <form class="form" id="shelfForm"><label class="f">Raf adı<input id="f_shelf" placeholder="Örn. Araştırma, Şiir, Okunacaklar" autocomplete="off"></label>

@@ -426,3 +426,21 @@ a.btn{color:inherit;text-decoration:none}
 .dpage .dcur{display:flex;align-items:center;gap:6px;font-size:.85rem}
 .dpage input{width:4.5em;min-width:0;font:inherit;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg)}
 .dside{min-width:0}
+
+/* edit form: shelf tags + searchable list */
+.rsel{position:relative}
+.rtags{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.rtag{display:inline-flex;align-items:center;gap:6px;background:var(--accent);color:var(--accent-fg);border-radius:999px;padding:4px 5px 4px 12px;font-size:.86rem;font-weight:500}
+.rtag button{all:unset;cursor:pointer;width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center}
+.rtag button svg{width:11px;height:11px}
+.radd{all:unset;cursor:pointer;border:1px dashed var(--accent);color:var(--accent);border-radius:999px;padding:4px 12px;font-size:.86rem;font-weight:500}
+.radd[aria-expanded="true"]{background:var(--accent-soft);border-style:solid}
+.rpop{position:absolute;z-index:20;top:calc(100% + 6px);left:0;width:min(260px,100%);min-width:220px;background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 28px -10px rgba(0,0,0,.35);padding:6px}
+.rpop input{box-sizing:border-box;width:100%;border:0;background:var(--surface-2);border-radius:8px;padding:8px 10px;font:inherit;font-size:.88rem;color:var(--fg);margin-bottom:4px}
+.rlist{display:grid;max-height:240px;overflow:auto}
+.rlist button{all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-radius:8px;font-size:.9rem}
+.rlist button:hover,.rlist button:focus-visible{background:var(--surface-2)}
+.rlist button.on{color:var(--accent);font-weight:600}
+.rlist button svg{width:15px;height:15px}
+.rlist .rnew{color:var(--accent);border-top:1px solid var(--line);border-radius:0 0 8px 8px;margin-top:2px}
+.pbtns .btn{border-radius:10px;justify-content:center}
