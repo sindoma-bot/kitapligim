@@ -778,7 +778,7 @@ function openBook(id, prefill, fromDetail){
         </div>
       </div>
       <div id="coverResults" hidden></div>
-      <details id="coverLinkBox"><summary class="meta" style="cursor:pointer;padding-block:2px">Mağazada ara: kapak ve bilgiler (Kitapyurdu, idefix, Amazon)</summary>
+      <details id="coverLinkBox" open><summary class="meta" style="cursor:pointer;padding-block:2px">Mağazada ara: kapak ve bilgiler (Kitapyurdu, idefix, Amazon)</summary>
         <div class="form" style="gap:8px;margin-top:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap" id="storeLinks"></div>
           <p class="meta" style="margin:0">Mağazada kapağa uzun bas → “Görsel adresini kopyala”, sonra buraya yapıştır.</p>
@@ -867,6 +867,8 @@ function openBook(id, prefill, fromDetail){
     ].map(([n,u])=>`<a class="btn" href="${u}" target="_blank" rel="noopener noreferrer">${n}'da ara</a>`).join("");
   };
   sh.querySelector("#coverLinkBox").addEventListener("toggle", drawStoreLinks);
+  for (const k of ["title","author","isbn"]) sh.querySelector("#f_"+k)?.addEventListener("input", drawStoreLinks);
+  drawStoreLinks();
   const showStores = () => { const d = sh.querySelector("#coverLinkBox"); d.open = true; drawStoreLinks(); d.scrollIntoView({block:"center", behavior:"smooth"}); };
   if (!id && prefill && prefill.isbn && !prefill.title) setTimeout(showStores, 300);
   sh.querySelector("#useCoverUrl").addEventListener("click", ()=>{

@@ -1,5 +1,5 @@
 /* Kitaplığım service worker: app shell offline, cover images cached as they are seen. */
-const VERSION = "v28";
+const VERSION = "v29";
 const SHELL = `shell-${VERSION}`, COVERS = "covers-v1";
 const FILES = ["./", "index.html", "app.css", "app.js", "store.js", "lookup.js", "manifest.webmanifest",
   "vendor/html5-qrcode.min.js", "icons/icon-192.png", "icons/apple-touch-icon.png"];
