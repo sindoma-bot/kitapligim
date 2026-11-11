@@ -505,16 +505,20 @@ function openBookMenu(id, x, y){
   closeBookMenu();
   const st = b.status || "unread";
   const scrim = document.createElement("div"); scrim.className = "bmenu-scrim";
+  const MI = {
+    shelf: svgI('<path d="M4 4v16M20 4v16M4 9h16M4 15h16"/>'),
+    search: svgI('<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>'),
+    info: svgI('<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/>'),
+    pen: svgI('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
+    trash: svgI('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>')};
   scrim.innerHTML = `<div class="bmenu" role="menu" aria-label="${esc(b.title)}">
-    <div class="bmenu-t">${esc(b.title||"Adsız")}</div>
-    <button role="menuitem" data-m="shelves">Raf düzenle</button>
-    <button role="menuitem" data-m="cover">İnternette kapak ara</button>
-    <div class="bmenu-st">${Object.entries(STATUS).map(([k,v])=>`<button role="menuitemradio" aria-checked="${st===k}" data-m="st:${k}">${v}</button>`).join("")}</div>
-    <button role="menuitem" data-m="detail">Ayrıntılar</button>
-    <button role="menuitem" data-m="edit">Düzenle</button>
-    <button role="menuitem" data-m="del" class="danger">Sil</button>
+    <div class="bmenu-hd"><div class="bmenu-cv">${coverHTML(b)}</div><div><b>${esc(b.title||"Adsız")}</b>${b.author?`<span>${esc(b.author)}</span>`:""}</div></div>
+    <div class="bmenu-st">${Object.entries(STATUS).map(([k,v])=>`<button role="menuitemradio" aria-checked="${st===k}" data-m="st:${k}">${STATUS_ICON[k]}${v}</button>`).join("")}</div>
+    <div class="bmenu-tl"><button role="menuitem" data-m="shelves">${MI.shelf}Raf düzenle</button><button role="menuitem" data-m="cover">${MI.search}Kapak ara</button></div>
+    <div class="bmenu-ft"><button role="menuitem" data-m="detail">${MI.info}Ayrıntı</button><button role="menuitem" data-m="edit">${MI.pen}Düzenle</button><button role="menuitem" data-m="del" class="danger">${MI.trash}<span>Sil</span></button></div>
   </div>`;
   document.body.appendChild(scrim);
+  hydratePhotos(scrim);
   const m = scrim.firstElementChild;
   const r = m.getBoundingClientRect(), W = innerWidth, H = innerHeight;
   m.style.left = Math.max(8, Math.min(x, W - r.width - 8)) + "px";
@@ -528,7 +532,7 @@ function openBookMenu(id, x, y){
     if (!t) { if (e.target === scrim) closeBookMenu(); return; }
     const a = t.dataset.m;
     if (a === "del") {
-      if (!t.dataset.armed) { t.dataset.armed = "1"; t.textContent = "Emin misin? Sil"; return; }
+      if (!t.dataset.armed) { t.dataset.armed = "1"; t.classList.add("armed"); t.querySelector("span").textContent = "Emin misin?"; return; }
       closeBookMenu(); await deleteBooks([id]); toast("Kitap silindi"); return;
     }
     closeBookMenu();
