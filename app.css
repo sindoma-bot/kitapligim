@@ -329,13 +329,16 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
 
 /* v3: green top bar with actions, compact detail (cover left, status right) */
 .sheet.page{padding-top:0}
-.pagehead{grid-template-columns:44px minmax(0,1fr) auto;background:var(--side);color:var(--side-fg);border-bottom:0;margin:0 -16px 14px;padding:6px 10px;min-height:52px}
+.pagehead{grid-template-columns:44px minmax(0,1fr) auto;background:var(--side);color:var(--side-fg);border-bottom:0;margin:0 -16px 14px;padding:10px 12px;min-height:64px}
 .sheet.page .pagehead{margin-top:0}
 .pagehead .back{color:var(--side-fg)}
 .pagehead .pt{text-align:left;padding-left:4px}
-.pagehead .pa{display:flex;gap:6px;justify-content:flex-end}
-.barbtn{border:0;border-radius:999px;padding:7px 16px;font-weight:600;font-size:.9rem;background:var(--side-on);color:var(--side-on-fg);white-space:nowrap}
+.pagehead .pa{display:flex;gap:8px;justify-content:flex-end}
+.barbtn{display:inline-flex;align-items:center;gap:7px;border:0;border-radius:10px;padding:9px 16px;font-weight:600;font-size:.92rem;background:var(--side-on);color:var(--side-on-fg);white-space:nowrap}
+.barbtn svg{width:17px;height:17px;flex:none}
+.barbtn.del{background:rgba(179,57,47,.18);color:#f3a498;border:1px solid rgba(243,164,152,.35);font-weight:500}
 .barbtn.ghost{background:transparent;color:var(--side-fg);border:1px solid rgba(255,255,255,.3);font-weight:500}
+.sheet .form .btn{border-radius:10px}
 .barbtn.armed{background:var(--danger);color:#fff;border-color:var(--danger)}
 .barbtn:disabled{opacity:.5}
 .detail{gap:14px}

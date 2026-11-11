@@ -229,10 +229,10 @@ async function loadPhoto(img){
 let toastT;
 function toast(msg, ms=2800){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, ms); }
 function armable(btn, label, armedLabel, action){
-  let t;
+  let t; const lab = btn.querySelector(".lbl") || btn;
   btn.addEventListener("click", async ()=>{
-    if (!btn.classList.contains("armed")){ btn.classList.add("armed"); btn.textContent=armedLabel; t=setTimeout(()=>{btn.classList.remove("armed");btn.textContent=label;},3500); return; }
-    clearTimeout(t); btn.classList.remove("armed"); btn.textContent=label; btn.disabled=true;
+    if (!btn.classList.contains("armed")){ btn.classList.add("armed"); lab.textContent=armedLabel; t=setTimeout(()=>{btn.classList.remove("armed");lab.textContent=label;},3500); return; }
+    clearTimeout(t); btn.classList.remove("armed"); lab.textContent=label; btn.disabled=true;
     try { await action(); } finally { btn.disabled=false; }
   });
 }
@@ -651,6 +651,8 @@ const ICON_ST = {
   reading:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6c-2-1.5-5-2-8-1.5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5v-13c-3-.5-6 0-8 1.5zM12 6v13"/></svg>',
   read:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.8"/></svg>'};
 const ST_VERB = {unread:"Okuyacağım", reading:"Okuyorum", read:"Okudum"};
+const TRASH_ICON = svgI('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>');
+const SAVE_ICON = svgI('<path d="M5 4h11l3 3v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>');
 const BACK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>';
 function openDetail(id){
   const b = books.get(id); if (!b) return;
@@ -751,7 +753,7 @@ function openBook(id, prefill, fromDetail){
   let rating = b.rating||0;
   const sl = shelfList();
   const sh = openSheet(`<div class="pagehead"><button type="button" class="back" id="fBack" aria-label="${fromDetail?"Geri":"Kapat"}">${BACK_ICON}</button><span class="pt">${id?"Kitabı düzenle":"Yeni kitap"}</span>
-      <span class="pa">${id?`<button type="button" class="barbtn ghost" id="delBook">Sil</button>`:""}<button type="submit" form="bookForm" class="barbtn" id="saveBook">${id?"Kaydet":"Ekle"}</button></span></div>
+      <span class="pa">${id?`<button type="button" class="barbtn del" id="delBook">${TRASH_ICON}<span class="lbl">Sil</span></button>`:""}<button type="submit" form="bookForm" class="barbtn" id="saveBook">${SAVE_ICON}<span class="lbl">${id?"Kaydet":"Ekle"}</span></button></span></div>
     <form class="form" id="bookForm" novalidate>
       <div class="lookup">
         <label class="f">ISBN<input id="f_isbn" inputmode="numeric" value="${esc(b.isbn)}" autocomplete="off" placeholder="978…"></label>
