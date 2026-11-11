@@ -781,7 +781,7 @@ function openBook(id, prefill, fromDetail){
       <details id="coverLinkBox" open><summary class="meta" style="cursor:pointer;padding-block:2px">Mağazada ara: kapak ve bilgiler (Kitapyurdu, idefix, Amazon)</summary>
         <div class="form" style="gap:8px;margin-top:8px">
           <div style="display:flex;gap:8px;flex-wrap:wrap" id="storeLinks"></div>
-          <p class="meta" style="margin:0">Mağazada kapağa uzun bas → “Görsel adresini kopyala”, sonra buraya yapıştır.</p>
+          <p class="meta" style="margin:0">Mağazada kapağa sağ tıkla → “Resim adresini kopyala” (iPhone: uzun bas → “Görsel adresini kopyala”). Uygulamaya dönünce kapak kendiliğinden eklenir, olmazsa “Yapıştır”a bas.</p>
           <div class="lookup"><label class="f">Kapak bağlantısı<input id="f_coverUrl" inputmode="url" autocomplete="off" placeholder="https://…jpg"></label><button type="button" class="btn" id="useCoverUrl">Kullan</button></div>
         </div>
       </details>
@@ -871,13 +871,38 @@ function openBook(id, prefill, fromDetail){
   drawStoreLinks();
   const showStores = () => { const d = sh.querySelector("#coverLinkBox"); d.open = true; drawStoreLinks(); d.scrollIntoView({block:"center", behavior:"smooth"}); };
   if (!id && prefill && prefill.isbn && !prefill.title) setTimeout(showStores, 300);
-  sh.querySelector("#useCoverUrl").addEventListener("click", ()=>{
-    const u = f("coverUrl").value.trim();
-    if (!/^https:\/\/\S+$/i.test(u)) { toast("https:// ile başlayan bir görsel bağlantısı yapıştır"); return; }
+  /* Cover link: a copied image address is taken over by itself (paste, button, or on return from the store tab). */
+  const useBtn = sh.querySelector("#useCoverUrl"), urlIn = f("coverUrl");
+  const asImgUrl = t => { t = String(t||"").trim(); if (!/^https?:\/\/\S+$/i.test(t)) return ""; return t.replace(/^http:/i, "https:"); };
+  const isStoreSearch = u => /[?&](filter_name|q|k)=/.test(u) && !/\.(jpe?g|png|webp|gif)(\?|$)/i.test(u);
+  let lastUsed = "";
+  const applyUrl = (u, msg) => {
     if (pendingPhoto){URL.revokeObjectURL(pendingPhoto.url); pendingPhoto=null;}
     if (b.photoId){ b._oldPhoto=b.photoId; b.photoId=null; }
-    b.coverUrl = u; preview(); toast("Kapak eklendi, kaydetmeyi unutma");
+    b.coverUrl = u; lastUsed = u; urlIn.value = u; preview(); syncUseBtn(); toast(msg || "Kapak eklendi, kaydetmeyi unutma");
+  };
+  const syncUseBtn = () => { useBtn.textContent = urlIn.value.trim() ? "Kullan" : "Yapıştır"; };
+  syncUseBtn();
+  urlIn.addEventListener("input", ()=>{ syncUseBtn(); const u = asImgUrl(urlIn.value); if (u && u !== lastUsed && !isStoreSearch(u)) applyUrl(u); });
+  useBtn.addEventListener("click", async ()=>{
+    let u = asImgUrl(urlIn.value);
+    if (!urlIn.value.trim()) {
+      try { u = asImgUrl(await navigator.clipboard.readText()); } catch { u = ""; }
+      if (!u) { toast("Panoda görsel bağlantısı yok. Mağazada kapağa sağ tıkla → “Resim adresini kopyala”."); urlIn.focus(); return; }
+    }
+    if (!u) { toast("https:// ile başlayan bir görsel bağlantısı yapıştır"); return; }
+    applyUrl(u);
   });
+  let storeVisit = 0;
+  sh.querySelector("#storeLinks").addEventListener("click", e=>{ if (e.target.closest("a")) storeVisit = Date.now(); });
+  const onBack = async ()=>{
+    if (!sh.isConnected) { removeEventListener("focus", onBack); document.removeEventListener("visibilitychange", onBack); return; }
+    if (document.hidden || !storeVisit || Date.now() - storeVisit > 30*60e3) return;
+    let t = ""; try { t = await navigator.clipboard.readText(); } catch { return; }
+    const u = asImgUrl(t);
+    if (u && u !== lastUsed && u !== b.coverUrl && !isStoreSearch(u)) applyUrl(u, "Kopyaladığın kapak eklendi, kaydetmeyi unutma");
+  };
+  addEventListener("focus", onBack); document.addEventListener("visibilitychange", onBack);
   sh.querySelector("#findCover").addEventListener("click", async e=>{
     const title = f("title").value.trim(); if (!title){ toast("Önce kitap adını yaz"); f("title").focus(); return; }
     const box = sh.querySelector("#coverResults"); box.hidden=false; box.innerHTML = `<span class="meta">Kapaklar aranıyor…</span>`;
