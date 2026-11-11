@@ -36,6 +36,7 @@ h1{font-family:var(--f-display);font-weight:700;font-size:1.45rem;margin:0;lette
 .iconbtn svg{width:20px;height:20px}
 .actions{display:flex;gap:8px;padding-block:4px 10px;overflow-x:auto;scrollbar-width:none}
 .actions::-webkit-scrollbar{display:none}
+.viewttl{display:none}
 .btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;white-space:nowrap;font-weight:500;font-size:.92rem}
 .btn svg{width:17px;height:17px;flex:none}
 .btn.primary{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
@@ -310,6 +311,11 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);overflow:hid
   .titlebar{padding-right:200px}
   .chips,.actions{padding-right:200px}
   #statusRow{display:none}
+  #chips{display:none}
+  .viewttl{display:flex;align-items:baseline;gap:10px;margin-right:auto;min-width:0}
+  .viewttl b{font-family:var(--f-serif);font-size:1.35rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .viewttl span{font-size:.85rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .actions{padding-block:2px 16px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:26px 22px}
   main{padding-top:22px}
 }

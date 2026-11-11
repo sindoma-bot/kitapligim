@@ -309,7 +309,7 @@ function listHTML(view){
 const pct = b => { const p = parseInt(b.pages)||0, c = Math.min(parseInt(b.currentPage)||0, p||Infinity); return p ? Math.round(100*c/p) : 0; };
 function progressHTML(b){
   const p = parseInt(b.pages)||0, c = parseInt(b.currentPage)||0;
-  return `<div class="prog"><div class="progress"><i style="width:${pct(b)}%"></i></div><div class="progt"><span>${p?`${c} / ${p} sayfa`:`${c} sayfa`}</span><b>${p?`%${pct(b)}`:""}</b></div></div>`;
+  return `<div class="prog"><div class="progress"><i style="width:${pct(b)}%"></i></div><div class="progt"><span>${p?`${c} / ${p} sayfa`:c?`${c}. sayfa`:"Sayfa henüz girilmedi"}</span><b>${p?`%${pct(b)}`:""}</b></div></div>`;
 }
 function renderReading(all){
   const box = $("#readingNow"); if (!box) return;
@@ -353,6 +353,10 @@ function render(){
   $("#sampleBanner").hidden = !all.some(b=>b.sample);
 
   const view = sorted(all.filter(b=>inShelf(b,ui.shelf) && matches(b)));
+  const stName = {all:"Tüm Kitaplar", unread:"Okunacak", reading:"Okunuyor", read:"Okundu", fav:"Favoriler", notes:"Notlarım", nocover:"Kapaksız"}[ui.status] || "";
+  const shName = ui.shelf==="all" ? "" : ui.shelf==="none" ? "Rafsız" : ui.shelf==="loan" ? "Ödünçte" : (shelves.get(ui.shelf)?.name || "");
+  const vt = shName ? (ui.status!=="all" ? `${shName} · ${stName}` : shName) : stName;
+  $("#viewTitle").innerHTML = `<b>${esc(vt)}</b><span>${view.length} kitap${ui.q ? " bulundu" : ""}</span>`;
   const grid = $("#grid");
   grid.className = ui.view==="list" ? "list" : "grid";
   if (ui.view==="list") grid.innerHTML = view.length ? listHTML(view) : "";
