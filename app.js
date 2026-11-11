@@ -192,8 +192,21 @@ function coverHTML(b){
   if (b.coverUrl) return `<div class="cover">${clothHTML(b)}<img class="remote" src="${esc(b.coverUrl)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="position:absolute;inset:0" onload="this.naturalWidth<20&&this.remove()" onerror="this.remove()"></div>`;
   return `<div class="cover" aria-hidden="true">${clothHTML(b)}</div>`;
 }
+/* Covers in the grid load only when they come near the screen (557 covers at once made the start slow). */
+let photoIO = null;
+function hydrateLazy(root){
+  if (!("IntersectionObserver" in window)) return hydratePhotos(root);
+  if (!photoIO) photoIO = new IntersectionObserver(entries=>{
+    for (const e of entries) if (e.isIntersecting) { photoIO.unobserve(e.target); loadPhoto(e.target); }
+  }, {rootMargin: "800px 0px"});
+  photoIO.disconnect();
+  for (const img of root.querySelectorAll("img[data-photo]")) photoIO.observe(img);
+}
 async function hydratePhotos(root){
-  for (const img of root.querySelectorAll("img[data-photo]")) {
+  for (const img of root.querySelectorAll("img[data-photo]")) await loadPhoto(img);
+}
+async function loadPhoto(img){
+  {
     const id = img.dataset.photo;
     let url = photoUrls.get(id);
     if (!url) {
@@ -201,8 +214,8 @@ async function hydratePhotos(root){
         const blob = await Store.getPhoto(id);
         if (blob) { url = URL.createObjectURL(blob); photoUrls.set(id, url); }
         else if (Sync.enabled) url = `api/fotos/${encodeURIComponent(id)}`;
-        else continue;
-      } catch { continue; }
+        else return;
+      } catch { return; }
     }
     img.src = url; img.hidden = false;
   }
@@ -288,6 +301,23 @@ function listHTML(view){
   return `<table class="booktable"><thead><tr><th>Kitap</th><th class="la">Yazar</th><th class="lc">Kategori</th><th class="lr">Raf</th><th class="ls">Durum</th><th class="lx"><span class="sr">İşlemler</span></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
+/* ---------- reading progress ---------- */
+const pct = b => { const p = parseInt(b.pages)||0, c = Math.min(parseInt(b.currentPage)||0, p||Infinity); return p ? Math.round(100*c/p) : 0; };
+function progressHTML(b){
+  const p = parseInt(b.pages)||0, c = parseInt(b.currentPage)||0;
+  return `<div class="prog"><div class="progress"><i style="width:${pct(b)}%"></i></div><div class="progt"><span>${p?`${c} / ${p} sayfa`:`${c} sayfa`}</span><b>${p?`%${pct(b)}`:""}</b></div></div>`;
+}
+function renderReading(all){
+  const box = $("#readingNow"); if (!box) return;
+  const list = all.filter(b=>b.status==="reading").sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
+  const show = list.length && ui.status==="all" && ui.shelf==="all" && !ui.q && !ui.select;
+  box.hidden = !show; if (!show) return;
+  box.innerHTML = `<h2 class="rnh">${NAVI.reading}Şu an okuyorum</h2><div class="rnl">${list.slice(0,6).map(b=>`<button type="button" class="rn" data-open="${esc(b.id)}">
+      <span class="rnc">${coverHTML(b)}</span><span class="rni"><b>${esc(b.title||"Adsız")}</b><small>${esc(b.author||"")}</small>${progressHTML(b)}</span></button>`).join("")}</div>`;
+  hydratePhotos(box);
+}
+$("#readingNow")?.addEventListener("click", e=>{ const t=e.target.closest("[data-open]"); if (t) openDetail(t.dataset.open); });
+
 /* ---------- render ---------- */
 function render(){
   const all = [...books.values()];
@@ -336,7 +366,8 @@ function render(){
       ${tags.length?`<span class="tags">${tags.join("")}</span>`:""}
     </button>`;
   }).join("");
-  hydratePhotos(grid);
+  hydrateLazy(grid);
+  renderReading(all);
 
   const empty = $("#empty");
   if (!loaded) empty.hidden = true;
@@ -625,6 +656,10 @@ function openDetail(id){
           <div class="dstatus" role="group" aria-label="Okuma durumu">
             ${Object.keys(ST_VERB).map(k=>`<button type="button" data-st="${k}" aria-pressed="${(b.status||"unread")===k}">${ICON_ST[k]}<span>${ST_VERB[k]}</span></button>`).join("")}
           </div>
+          <div class="dpage" id="dPage" ${(b.status||"unread")==="reading"?"":"hidden"}>
+            <label for="dCur">Kaçıncı sayfadasın?</label><div class="dcur"><input id="dCur" type="number" inputmode="numeric" min="0" value="${esc(b.currentPage||"")}" placeholder="0"> ${b.pages?`/ ${esc(b.pages)}`:""}</div>
+            <div id="dProg">${progressHTML(b)}</div>
+          </div>
         </div>
       </div>
       <section class="dsec"><h3>Notum</h3>
@@ -654,9 +689,21 @@ function openDetail(id){
   const update = async patch => { const nb = {...cur(), ...patch, updatedAt: Date.now()}; await saveBook(nb); return nb; };
   sh.querySelector(".dstatus").addEventListener("click", async e=>{
     const t = e.target.closest("[data-st]"); if (!t) return;
-    await update({status:t.dataset.st});
+    const st = t.dataset.st, patch = {status:st};
+    if (st==="read" && parseInt(cur().pages)) patch.currentPage = cur().pages;
+    if (st==="reading" && !cur().startedAt) patch.startedAt = Date.now();
+    if (st==="read") patch.finishedAt = Date.now();
+    await update(patch);
     sh.querySelectorAll("[data-st]").forEach(x=>x.setAttribute("aria-pressed", x===t));
+    sh.querySelector("#dPage").hidden = st!=="reading";
     toast(STATUS[t.dataset.st]);
+  });
+  sh.querySelector("#dCur").addEventListener("change", async e=>{
+    const p = parseInt(cur().pages)||0; let c = Math.max(0, parseInt(e.target.value)||0); if (p) c = Math.min(c, p);
+    e.target.value = c;
+    const nb = await update({currentPage: String(c)});
+    sh.querySelector("#dProg").innerHTML = progressHTML(nb);
+    if (p && c >= p) toast("Bitti mi? “Okudum”a dokunabilirsin");
   });
   const drawStars = () => { const r = cur().rating||0; sh.querySelector("#dStars").innerHTML = [1,2,3,4,5].map(i=>`<button type="button" data-r="${i}" class="${i<=r?"on":""}" aria-label="${i} yıldız">★</button>`).join(""); };
   drawStars();
